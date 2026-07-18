@@ -1,0 +1,1831 @@
+﻿from __future__ import annotations
+
+import argparse
+import csv
+from collections import deque
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Deque, Dict, List, Optional, Tuple
+
+import cv2
+import numpy as np
+
+
+@dataclass
+class DetectorConfig:
+    """
+    Central place for field-tuning parameters.
+
+    The defaults are intentionally conservative so the script can run as a
+    proof-of-concept on 4K drone videos after downsampling.
+    """
+
+    # Phase 1: preprocessing + ego-motion compensation.
+    downscale: float = 0.5
+    stride_frames: int = 5
+    gaussian_blur_ksize: int = 5
+
+    orb_features: int = 1500
+    orb_ratio_test: float = 0.75
+    homography_ransac_thresh: float = 4.0
+    homography_min_matches: int = 20
+    homography_min_inliers: int = 15
+    homography_min_inlier_ratio: float = 0.35
+
+    shi_tomasi_max_corners: int = 800
+    shi_tomasi_quality_level: float = 0.01
+    shi_tomasi_min_distance: float = 8.0
+
+    # Phase 2: strided frame differencing.
+    diff_threshold: int = 40
+    open_kernel_size: int = 3
+    close_kernel_size: int = 9
+    open_iterations: int = 1
+    close_iterations: int = 2
+    min_blob_area: float = 220.0
+    max_blob_area_ratio: float = 0.35
+    max_motion_ratio: float = 0.20
+    border_ignore_px: int = 12
+    feature_border_margin_px: int = 24
+    valid_mask_erode_px: int = 10
+    rotation_mask_expand_per_deg: float = 1.5
+    max_rotation_deg: float = 12.0
+
+    # Phase 3: radial expansion check.
+    track_match_distance: float = 180.0
+    growth_window_frames: int = 3
+    min_growth_ratio: float = 2.2
+    min_confirm_area: float = 220.0
+    min_dimension_growth_ratio: float = 1.08
+    min_expansion_balance: float = 0.55
+    max_center_shift_ratio: float = 0.65
+    strong_growth_override_ratio: float = 4.5
+
+    enable_radial_flow_check: bool = True
+    flow_min_blob_area: float = 180.0
+    flow_edge_dilate_px: int = 4
+    flow_max_corners: int = 120
+    flow_quality_level: float = 0.01
+    flow_min_distance: int = 4
+    flow_win_size: int = 21
+    flow_max_level: int = 3
+    flow_min_vectors: int = 8
+    flow_min_magnitude: float = 0.7
+    radial_cosine_threshold: float = 0.35
+    min_radial_outward_ratio: float = 0.60
+
+    # Phase 4: lifecycle / silence logic.
+    stop_growth_ratio: float = 1.08
+    stop_patience_frames: int = 4
+    max_tentative_age_frames: int = 8
+    max_missed_frames: int = 6
+    max_event_age_sec: float = 3.0
+    confirmed_box_hold_sec: float = 0.0
+
+    # Re-association rules to avoid repeatedly creating new IDs for the same target.
+    trajectory_match_distance: float = 140.0
+    trajectory_extrapolation_scale: float = 2.0
+    recent_confirmed_match_sec: float = 10.0
+
+    # Candidate splitting for nearby simultaneous bursts.
+    enable_blob_splitting: bool = True
+    split_blob_area: float = 2500.0
+    split_peak_threshold: float = 0.45
+    split_min_peak_area: int = 6
+    split_kernel_size: int = 3
+
+    # Visualization.
+    draw_debug_tiles: bool = True
+    display_scale: float = 1.0
+    show_candidate_boxes: bool = False
+    show_status_overlay: bool = True
+
+
+@dataclass
+class FrameBundle:
+    index: int
+    bgr: np.ndarray
+    gray: np.ndarray
+    diff_gray: np.ndarray
+
+
+@dataclass
+class HomographyResult:
+    H: Optional[np.ndarray]
+    method: str
+    matches: int
+    inliers: int
+    inlier_ratio: float
+    transform_kind: str = "unknown"
+    dx: Optional[float] = None
+    dy: Optional[float] = None
+    scale: Optional[float] = None
+    rotation_deg: Optional[float] = None
+
+    @property
+    def ok(self) -> bool:
+        return self.H is not None
+
+
+@dataclass
+class RadialFlowResult:
+    outward_ratio: Optional[float]
+    mean_cosine: Optional[float]
+    valid_vectors: int
+
+
+@dataclass
+class BlobCandidate:
+    contour: np.ndarray
+    area: float
+    bbox: Tuple[int, int, int, int]
+    centroid: Tuple[float, float]
+    radial_flow: Optional[RadialFlowResult] = None
+
+
+@dataclass
+class EventTrack:
+    event_id: int
+    confirmed: bool
+    first_seen_frame: int
+    last_seen_frame: int
+    centroid: Tuple[float, float]
+    bbox: Tuple[int, int, int, int]
+    confirm_frame: Optional[int] = None
+    missed_frames: int = 0
+    non_growth_frames: int = 0
+    area_history: Deque[float] = field(
+        default_factory=lambda: deque(maxlen=16))
+    growth_history: Deque[float] = field(
+        default_factory=lambda: deque(maxlen=16))
+    radial_history: Deque[float] = field(
+        default_factory=lambda: deque(maxlen=16))
+    centroid_history: Deque[Tuple[float, float]] = field(
+        default_factory=lambda: deque(maxlen=16))
+    bbox_history: Deque[Tuple[int, int, int, int]] = field(
+        default_factory=lambda: deque(maxlen=16))
+
+    @property
+    def current_area(self) -> float:
+        return float(self.area_history[-1]) if self.area_history else 0.0
+
+
+@dataclass
+class ConfirmedEvent:
+    event_id: int
+    frame_idx: int
+    timestamp_sec: float
+    bbox: Tuple[int, int, int, int]
+    area: float
+    growth_ratio: float
+    radial_ratio: Optional[float]
+
+
+@dataclass
+class ConfirmedTrackSnapshot:
+    event_id: int
+    confirm_frame: int
+    last_seen_frame: int
+    centroid_history: List[Tuple[float, float]]
+    bbox_history: List[Tuple[int, int, int, int]]
+
+
+@dataclass
+class VideoRunSummary:
+    video_name: str
+    processed_frames: int
+    confirmed_events: int
+    snapshots_saved: int
+    output_video_path: Optional[Path]
+
+
+@dataclass
+class DetectionArtifact:
+    video_name: str
+    event_id: int
+    frame_idx: int
+    timestamp_sec: float
+    area: float
+    growth_ratio: float
+    radial_ratio: Optional[float]
+    full_frame_path: Path
+    crop_path: Path
+
+
+class InstantSmokeDustDetector:
+    """
+    Proof-of-concept detector for instantaneous abnormal smoke/dust events
+    under drone ego-motion.
+
+    Pipeline:
+      Phase 1. Downsample + estimate homography to compensate ego-motion.
+      Phase 2. Perform strided frame differencing on aligned frames.
+      Phase 3. Filter candidates by short-term area explosion and optional
+               radial outward optical flow.
+      Phase 4. Maintain event IDs only while the blob is still in its early,
+               rapidly expanding lifecycle.
+    """
+
+    def __init__(self, config: DetectorConfig, fps: float) -> None:
+        self.config = config
+        self.fps = fps if fps > 0 else 30.0
+        self.max_event_age_frames = max(
+            int(round(self.config.max_event_age_sec * self.fps)), 1)
+        self.confirmed_box_hold_frames = max(
+            int(round(self.config.confirmed_box_hold_sec * self.fps)), 0)
+        self.recent_confirmed_match_frames = max(
+            int(round(self.config.recent_confirmed_match_sec * self.fps)), 1)
+        self.history: Deque[FrameBundle] = deque(
+            maxlen=max(self.config.stride_frames + 1, 2))
+        self.tracks: Dict[int, EventTrack] = {}
+        self.recent_confirmed_tracks: Deque[ConfirmedTrackSnapshot] = deque(maxlen=64)
+        self.pending_confirmations: List[ConfirmedEvent] = []
+        self.next_event_id = 1
+        self.orb = cv2.ORB_create(
+            nfeatures=self.config.orb_features,
+            scaleFactor=1.2,
+            nlevels=8,
+            edgeThreshold=15,
+            fastThreshold=15,
+        )
+
+    def process_frame(self, frame_bgr: np.ndarray, frame_idx: int) -> np.ndarray:
+        self.pending_confirmations = []
+        bundle = self._build_frame_bundle(frame_bgr, frame_idx)
+        self.history.append(bundle)
+
+        vis = bundle.bgr.copy()
+        zero_debug = np.zeros(bundle.gray.shape, dtype=np.uint8)
+
+        if len(self.history) <= self.config.stride_frames:
+            self._expire_tracks_without_measurement(frame_idx)
+            return self._draw_visualization(
+                vis,
+                frame_idx,
+                zero_debug,
+                zero_debug,
+                None,
+                measurement_ok=False,
+                candidates=[],
+            )
+
+        current = self.history[-1]
+        reference = self.history[0]
+
+        # Align T-N onto T so that most of the residual motion comes from the
+        # event itself instead of the drone platform motion.
+        align_result = self.estimate_homography(reference.gray, current.gray)
+        candidates: List[BlobCandidate] = []
+        diff_img = zero_debug
+        motion_mask = zero_debug
+        measurement_ok = False
+
+        if align_result.ok:
+            aligned_ref, valid_mask = self._warp_reference(
+                reference.diff_gray, current.gray.shape, align_result)
+            diff_img, motion_mask, candidates, measurement_ok = self._extract_candidates(
+                current.diff_gray,
+                aligned_ref,
+                valid_mask,
+            )
+
+            if measurement_ok and candidates and self.config.enable_radial_flow_check and len(self.history) >= 2:
+                prev_frame = self.history[-2]
+                prev_align = self.estimate_homography(
+                    prev_frame.gray, current.gray)
+                if prev_align.ok:
+                    # Optical flow is evaluated after compensating the global
+                    # background motion between T-1 and T.
+                    aligned_prev, _ = self._warp_reference(
+                        prev_frame.gray, current.gray.shape, prev_align)
+                    self._populate_radial_flow(
+                        current.gray, aligned_prev, candidates)
+
+        self._update_tracks(candidates, frame_idx, measurement_ok)
+
+        return self._draw_visualization(
+            vis,
+            frame_idx,
+            diff_img,
+            motion_mask,
+            align_result,
+            measurement_ok,
+            candidates,
+        )
+
+    def consume_pending_confirmations(self) -> List[ConfirmedEvent]:
+        confirmations = self.pending_confirmations
+        self.pending_confirmations = []
+        return confirmations
+
+    def _build_frame_bundle(self, frame_bgr: np.ndarray, frame_idx: int) -> FrameBundle:
+        if self.config.downscale != 1.0:
+            frame_bgr = cv2.resize(
+                frame_bgr,
+                None,
+                fx=self.config.downscale,
+                fy=self.config.downscale,
+                interpolation=cv2.INTER_AREA,
+            )
+
+        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        blur_k = _odd_ksize(self.config.gaussian_blur_ksize)
+        if blur_k > 1:
+            diff_gray = cv2.GaussianBlur(gray, (blur_k, blur_k), 0)
+        else:
+            diff_gray = gray
+
+        return FrameBundle(index=frame_idx, bgr=frame_bgr, gray=gray, diff_gray=diff_gray)
+
+    def estimate_homography(self, src_gray: np.ndarray, dst_gray: np.ndarray) -> HomographyResult:
+        orb_result = self._estimate_similarity_orb(src_gray, dst_gray)
+        if orb_result.ok:
+            return orb_result
+        lk_result = self._estimate_similarity_shi_tomasi(src_gray, dst_gray)
+        if lk_result.ok:
+            return lk_result
+
+        orb_h_result = self._estimate_homography_orb(src_gray, dst_gray)
+        if orb_h_result.ok:
+            return orb_h_result
+        return self._estimate_homography_shi_tomasi(src_gray, dst_gray)
+
+    def _estimate_similarity_orb(self, src_gray: np.ndarray, dst_gray: np.ndarray) -> HomographyResult:
+        feature_mask = self._build_feature_mask(src_gray.shape)
+        keypoints_a, desc_a = self.orb.detectAndCompute(src_gray, feature_mask)
+        keypoints_b, desc_b = self.orb.detectAndCompute(dst_gray, feature_mask)
+        if desc_a is None or desc_b is None or len(keypoints_a) < 8 or len(keypoints_b) < 8:
+            return HomographyResult(None, "orb_similarity", 0, 0, 0.0)
+
+        matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
+        raw_matches = matcher.knnMatch(desc_a, desc_b, k=2)
+
+        good_matches = []
+        for pair in raw_matches:
+            if len(pair) != 2:
+                continue
+            m, n = pair
+            if m.distance < self.config.orb_ratio_test * n.distance:
+                good_matches.append(m)
+
+        if len(good_matches) < self.config.homography_min_matches:
+            return HomographyResult(None, "orb_similarity", len(good_matches), 0, 0.0)
+
+        src_pts = np.float32(
+            [keypoints_a[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+        dst_pts = np.float32(
+            [keypoints_b[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+        return self._estimate_similarity_from_points(
+            src_pts,
+            dst_pts,
+            method="orb_similarity",
+            matches=len(good_matches),
+        )
+
+    def _estimate_similarity_shi_tomasi(self, src_gray: np.ndarray, dst_gray: np.ndarray) -> HomographyResult:
+        corners = cv2.goodFeaturesToTrack(
+            src_gray,
+            maxCorners=self.config.shi_tomasi_max_corners,
+            qualityLevel=self.config.shi_tomasi_quality_level,
+            minDistance=self.config.shi_tomasi_min_distance,
+            blockSize=7,
+            mask=self._build_feature_mask(src_gray.shape),
+        )
+        if corners is None or len(corners) < self.config.homography_min_matches:
+            return HomographyResult(None, "shi_tomasi_similarity", 0, 0, 0.0)
+
+        next_pts, status, _ = cv2.calcOpticalFlowPyrLK(
+            src_gray,
+            dst_gray,
+            corners,
+            None,
+            winSize=(21, 21),
+            maxLevel=3,
+            criteria=(cv2.TERM_CRITERIA_EPS |
+                      cv2.TERM_CRITERIA_COUNT, 30, 0.01),
+        )
+        if next_pts is None or status is None:
+            return HomographyResult(None, "shi_tomasi_similarity", 0, 0, 0.0)
+
+        valid = status.ravel() == 1
+        src_valid = corners[valid]
+        dst_valid = next_pts[valid]
+        matches = int(len(src_valid))
+        if matches < self.config.homography_min_matches:
+            return HomographyResult(None, "shi_tomasi_similarity", matches, 0, 0.0)
+
+        return self._estimate_similarity_from_points(
+            src_valid,
+            dst_valid,
+            method="shi_tomasi_similarity",
+            matches=matches,
+        )
+
+    def _estimate_similarity_from_points(
+        self,
+        src_pts: np.ndarray,
+        dst_pts: np.ndarray,
+        *,
+        method: str,
+        matches: int,
+    ) -> HomographyResult:
+        affine, inlier_mask = cv2.estimateAffinePartial2D(
+            src_pts,
+            dst_pts,
+            method=cv2.RANSAC,
+            ransacReprojThreshold=self.config.homography_ransac_thresh,
+        )
+        if affine is None or inlier_mask is None:
+            return HomographyResult(None, method, matches, 0, 0.0)
+
+        inliers = int(inlier_mask.ravel().sum())
+        inlier_ratio = inliers / max(matches, 1)
+        if (
+            inliers < self.config.homography_min_inliers
+            or inlier_ratio < self.config.homography_min_inlier_ratio
+        ):
+            return HomographyResult(None, method, matches, inliers, inlier_ratio)
+
+        H = np.eye(3, dtype=np.float32)
+        H[:2, :] = affine
+        dx = float(affine[0, 2])
+        dy = float(affine[1, 2])
+        scale = float(np.hypot(affine[0, 0], affine[1, 0]))
+        rotation_deg = float(np.degrees(np.arctan2(affine[1, 0], affine[0, 0])))
+        if abs(rotation_deg) > self.config.max_rotation_deg:
+            return HomographyResult(None, method, matches, inliers, inlier_ratio)
+        return HomographyResult(
+            H,
+            method,
+            matches,
+            inliers,
+            inlier_ratio,
+            transform_kind="similarity",
+            dx=dx,
+            dy=dy,
+            scale=scale,
+            rotation_deg=rotation_deg,
+        )
+
+    def _estimate_homography_orb(self, src_gray: np.ndarray, dst_gray: np.ndarray) -> HomographyResult:
+        keypoints_a, desc_a = self.orb.detectAndCompute(src_gray, None)
+        keypoints_b, desc_b = self.orb.detectAndCompute(dst_gray, None)
+        if desc_a is None or desc_b is None or len(keypoints_a) < 8 or len(keypoints_b) < 8:
+            return HomographyResult(None, "orb", 0, 0, 0.0)
+
+        matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
+        raw_matches = matcher.knnMatch(desc_a, desc_b, k=2)
+
+        good_matches = []
+        for pair in raw_matches:
+            if len(pair) != 2:
+                continue
+            m, n = pair
+            if m.distance < self.config.orb_ratio_test * n.distance:
+                good_matches.append(m)
+
+        if len(good_matches) < self.config.homography_min_matches:
+            return HomographyResult(None, "orb", len(good_matches), 0, 0.0)
+
+        src_pts = np.float32(
+            [keypoints_a[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+        dst_pts = np.float32(
+            [keypoints_b[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+
+        H, inlier_mask = cv2.findHomography(
+            src_pts,
+            dst_pts,
+            cv2.RANSAC,
+            ransacReprojThreshold=self.config.homography_ransac_thresh,
+        )
+        if H is None or inlier_mask is None:
+            return HomographyResult(None, "orb", len(good_matches), 0, 0.0)
+
+        inliers = int(inlier_mask.ravel().sum())
+        inlier_ratio = inliers / max(len(good_matches), 1)
+        if (
+            inliers < self.config.homography_min_inliers
+            or inlier_ratio < self.config.homography_min_inlier_ratio
+        ):
+            return HomographyResult(None, "orb", len(good_matches), inliers, inlier_ratio)
+
+        return HomographyResult(
+            H,
+            "orb",
+            len(good_matches),
+            inliers,
+            inlier_ratio,
+            transform_kind="homography",
+        )
+
+    def _estimate_homography_shi_tomasi(self, src_gray: np.ndarray, dst_gray: np.ndarray) -> HomographyResult:
+        corners = cv2.goodFeaturesToTrack(
+            src_gray,
+            maxCorners=self.config.shi_tomasi_max_corners,
+            qualityLevel=self.config.shi_tomasi_quality_level,
+            minDistance=self.config.shi_tomasi_min_distance,
+            blockSize=7,
+            mask=self._build_feature_mask(src_gray.shape),
+        )
+        if corners is None or len(corners) < self.config.homography_min_matches:
+            return HomographyResult(None, "shi_tomasi_lk", 0, 0, 0.0)
+
+        next_pts, status, _ = cv2.calcOpticalFlowPyrLK(
+            src_gray,
+            dst_gray,
+            corners,
+            None,
+            winSize=(21, 21),
+            maxLevel=3,
+            criteria=(cv2.TERM_CRITERIA_EPS |
+                      cv2.TERM_CRITERIA_COUNT, 30, 0.01),
+        )
+        if next_pts is None or status is None:
+            return HomographyResult(None, "shi_tomasi_lk", 0, 0, 0.0)
+
+        valid = status.ravel() == 1
+        src_valid = corners[valid]
+        dst_valid = next_pts[valid]
+        matches = int(len(src_valid))
+        if matches < self.config.homography_min_matches:
+            return HomographyResult(None, "shi_tomasi_lk", matches, 0, 0.0)
+
+        H, inlier_mask = cv2.findHomography(
+            src_valid,
+            dst_valid,
+            cv2.RANSAC,
+            ransacReprojThreshold=self.config.homography_ransac_thresh,
+        )
+        if H is None or inlier_mask is None:
+            return HomographyResult(None, "shi_tomasi_lk", matches, 0, 0.0)
+
+        inliers = int(inlier_mask.ravel().sum())
+        inlier_ratio = inliers / max(matches, 1)
+        if (
+            inliers < self.config.homography_min_inliers
+            or inlier_ratio < self.config.homography_min_inlier_ratio
+        ):
+            return HomographyResult(None, "shi_tomasi_lk", matches, inliers, inlier_ratio)
+
+        return HomographyResult(
+            H,
+            "shi_tomasi_lk",
+            matches,
+            inliers,
+            inlier_ratio,
+            transform_kind="homography",
+        )
+
+    def _warp_reference(
+        self,
+        src_img: np.ndarray,
+        dst_shape: Tuple[int, int],
+        align_result: HomographyResult,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        height, width = dst_shape
+        if align_result.transform_kind == "similarity":
+            affine = np.asarray(align_result.H[:2, :], dtype=np.float32)
+            aligned = cv2.warpAffine(
+                src_img,
+                affine,
+                (width, height),
+                flags=cv2.INTER_LINEAR,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=0,
+            )
+            valid_mask = cv2.warpAffine(
+                np.full((src_img.shape[0], src_img.shape[1]), 255, dtype=np.uint8),
+                affine,
+                (width, height),
+                flags=cv2.INTER_NEAREST,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=0,
+            )
+        else:
+            aligned = cv2.warpPerspective(
+                src_img,
+                align_result.H,
+                (width, height),
+                flags=cv2.INTER_LINEAR,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=0,
+            )
+            valid_mask = cv2.warpPerspective(
+                np.full((src_img.shape[0], src_img.shape[1]), 255, dtype=np.uint8),
+                align_result.H,
+                (width, height),
+                flags=cv2.INTER_NEAREST,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=0,
+            )
+
+        valid_mask = self._stabilize_valid_mask(valid_mask, align_result)
+        return aligned, valid_mask
+
+
+    def _build_feature_mask(self, image_shape: Tuple[int, int]) -> np.ndarray:
+        height, width = image_shape
+        mask = np.full((height, width), 255, dtype=np.uint8)
+        margin = max(int(self.config.feature_border_margin_px), 0)
+        if margin <= 0:
+            return mask
+        margin = min(margin, max(min(height, width) // 3, 1))
+        mask[:margin, :] = 0
+        mask[-margin:, :] = 0
+        mask[:, :margin] = 0
+        mask[:, -margin:] = 0
+        return mask
+
+    def _stabilize_valid_mask(
+        self,
+        valid_mask: np.ndarray,
+        align_result: HomographyResult,
+    ) -> np.ndarray:
+        margin = max(int(self.config.valid_mask_erode_px), 0)
+        if align_result.rotation_deg is not None:
+            margin += int(np.ceil(abs(align_result.rotation_deg) * self.config.rotation_mask_expand_per_deg))
+
+        if margin > 0:
+            kernel_size = max(1, margin * 2 + 1)
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+            valid_mask = cv2.erode(valid_mask, kernel, iterations=1)
+
+        valid_mask = cv2.threshold(valid_mask, 254, 255, cv2.THRESH_BINARY)[1]
+        return valid_mask
+
+    def _extract_candidates(
+        self,
+        current_gray: np.ndarray,
+        aligned_reference: np.ndarray,
+        valid_mask: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray, List[BlobCandidate], bool]:
+        diff = cv2.absdiff(current_gray, aligned_reference)
+        diff = cv2.bitwise_and(diff, valid_mask)
+        _, motion_mask = cv2.threshold(
+            diff, self.config.diff_threshold, 255, cv2.THRESH_BINARY)
+        motion_mask = cv2.bitwise_and(motion_mask, valid_mask)
+
+        if self.config.border_ignore_px > 0:
+            b = self.config.border_ignore_px
+            motion_mask[:b, :] = 0
+            motion_mask[-b:, :] = 0
+            motion_mask[:, :b] = 0
+            motion_mask[:, -b:] = 0
+            diff[:b, :] = 0
+            diff[-b:, :] = 0
+            diff[:, :b] = 0
+            diff[:, -b:] = 0
+
+        open_k = _odd_ksize(self.config.open_kernel_size)
+        close_k = _odd_ksize(self.config.close_kernel_size)
+        open_kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (open_k, open_k))
+        close_kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (close_k, close_k))
+
+        motion_mask = cv2.morphologyEx(
+            motion_mask,
+            cv2.MORPH_OPEN,
+            open_kernel,
+            iterations=self.config.open_iterations,
+        )
+        motion_mask = cv2.morphologyEx(
+            motion_mask,
+            cv2.MORPH_CLOSE,
+            close_kernel,
+            iterations=self.config.close_iterations,
+        )
+
+        frame_area = motion_mask.shape[0] * motion_mask.shape[1]
+        valid_area = int(cv2.countNonZero(valid_mask))
+        motion_ratio = float(cv2.countNonZero(
+            motion_mask)) / max(valid_area, 1)
+        if motion_ratio > self.config.max_motion_ratio:
+            # When too much of the frame is foreground, it is often caused by
+            # a bad alignment estimate rather than a real explosion.
+            return diff, motion_mask, [], False
+
+        contours = self._find_candidate_contours(motion_mask)
+        candidates: List[BlobCandidate] = []
+
+        for contour in contours:
+            area = float(cv2.contourArea(contour))
+            if area < self.config.min_blob_area:
+                continue
+            if area > self.config.max_blob_area_ratio * frame_area:
+                continue
+
+            x, y, w, h = cv2.boundingRect(contour)
+            centroid = _contour_centroid(contour, (x + w / 2.0, y + h / 2.0))
+            candidates.append(
+                BlobCandidate(
+                    contour=contour,
+                    area=area,
+                    bbox=(x, y, w, h),
+                    centroid=centroid,
+                )
+            )
+
+        return diff, motion_mask, candidates, True
+
+    def _find_candidate_contours(self, motion_mask: np.ndarray) -> List[np.ndarray]:
+        contours, _ = cv2.findContours(
+            motion_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not self.config.enable_blob_splitting:
+            return contours
+
+        refined: List[np.ndarray] = []
+        for contour in contours:
+            refined.extend(self._split_contour_if_needed(motion_mask, contour))
+        return refined
+
+    def _split_contour_if_needed(self, motion_mask: np.ndarray, contour: np.ndarray) -> List[np.ndarray]:
+        area = float(cv2.contourArea(contour))
+        if area < self.config.split_blob_area:
+            return [contour]
+
+        x, y, w, h = cv2.boundingRect(contour)
+        if w < 12 or h < 12:
+            return [contour]
+
+        roi = motion_mask[y: y + h, x: x + w]
+        if roi.size == 0:
+            return [contour]
+
+        fg = np.uint8(roi > 0)
+        dist = cv2.distanceTransform(fg, cv2.DIST_L2, 5)
+        if float(dist.max()) < 1.5:
+            return [contour]
+
+        _, sure_fg = cv2.threshold(
+            dist,
+            self.config.split_peak_threshold * float(dist.max()),
+            255,
+            cv2.THRESH_BINARY,
+        )
+        sure_fg = np.uint8(sure_fg)
+
+        num_labels, peak_markers, stats, _ = cv2.connectedComponentsWithStats(
+            sure_fg)
+        valid_peak_labels = [
+            label
+            for label in range(1, num_labels)
+            if stats[label, cv2.CC_STAT_AREA] >= self.config.split_min_peak_area
+        ]
+        if len(valid_peak_labels) < 2:
+            return [contour]
+
+        filtered_fg = np.zeros_like(sure_fg)
+        for label in valid_peak_labels:
+            filtered_fg[peak_markers == label] = 255
+
+        split_k = _odd_ksize(self.config.split_kernel_size)
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (split_k, split_k))
+        sure_bg = cv2.dilate(np.uint8(fg * 255), kernel, iterations=1)
+        unknown = cv2.subtract(sure_bg, filtered_fg)
+
+        _, markers = cv2.connectedComponents(filtered_fg)
+        markers = markers + 1
+        markers[unknown > 0] = 0
+
+        roi_color = cv2.cvtColor(roi, cv2.COLOR_GRAY2BGR)
+        watershed = cv2.watershed(roi_color, markers)
+
+        split_contours: List[np.ndarray] = []
+        for label in range(2, int(watershed.max()) + 1):
+            seg = np.uint8(watershed == label) * 255
+            seg = cv2.bitwise_and(seg, np.uint8(fg * 255))
+            sub_contours, _ = cv2.findContours(
+                seg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for sub_contour in sub_contours:
+                if cv2.contourArea(sub_contour) < self.config.min_blob_area * 0.5:
+                    continue
+                sub_contour = sub_contour.copy()
+                sub_contour[:, 0, 0] += x
+                sub_contour[:, 0, 1] += y
+                split_contours.append(sub_contour)
+
+        return split_contours if len(split_contours) >= 2 else [contour]
+
+    def _populate_radial_flow(
+        self,
+        current_gray: np.ndarray,
+        aligned_prev_gray: np.ndarray,
+        candidates: List[BlobCandidate],
+    ) -> None:
+        for candidate in candidates:
+            if candidate.area < self.config.flow_min_blob_area:
+                continue
+            candidate.radial_flow = self._compute_radial_flow(
+                current_gray, aligned_prev_gray, candidate)
+
+    def _compute_radial_flow(
+        self,
+        current_gray: np.ndarray,
+        aligned_prev_gray: np.ndarray,
+        candidate: BlobCandidate,
+    ) -> RadialFlowResult:
+        x, y, w, h = candidate.bbox
+        pad = max(8, self.config.flow_win_size)
+        x0 = max(x - pad, 0)
+        y0 = max(y - pad, 0)
+        x1 = min(x + w + pad, current_gray.shape[1])
+        y1 = min(y + h + pad, current_gray.shape[0])
+
+        curr_roi = current_gray[y0:y1, x0:x1]
+        prev_roi = aligned_prev_gray[y0:y1, x0:x1]
+        if curr_roi.size == 0 or prev_roi.size == 0:
+            return RadialFlowResult(None, None, 0)
+
+        edge_mask = np.zeros(curr_roi.shape, dtype=np.uint8)
+        shifted_contour = candidate.contour.copy().astype(np.int32)
+        shifted_contour[:, 0, 0] -= x0
+        shifted_contour[:, 0, 1] -= y0
+        cv2.drawContours(edge_mask, [shifted_contour], -1, 255, thickness=1)
+
+        dilate_k = _odd_ksize(self.config.flow_edge_dilate_px)
+        edge_mask = cv2.dilate(
+            edge_mask,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilate_k, dilate_k)),
+            iterations=1,
+        )
+
+        points_prev = cv2.goodFeaturesToTrack(
+            prev_roi,
+            maxCorners=self.config.flow_max_corners,
+            qualityLevel=self.config.flow_quality_level,
+            minDistance=self.config.flow_min_distance,
+            mask=edge_mask,
+            blockSize=5,
+        )
+        if points_prev is None or len(points_prev) < self.config.flow_min_vectors:
+            return RadialFlowResult(None, None, 0)
+
+        points_curr, status, _ = cv2.calcOpticalFlowPyrLK(
+            prev_roi,
+            curr_roi,
+            points_prev,
+            None,
+            winSize=(self.config.flow_win_size, self.config.flow_win_size),
+            maxLevel=self.config.flow_max_level,
+            criteria=(cv2.TERM_CRITERIA_EPS |
+                      cv2.TERM_CRITERIA_COUNT, 20, 0.03),
+        )
+        if points_curr is None or status is None:
+            return RadialFlowResult(None, None, 0)
+
+        valid = status.ravel() == 1
+        points_prev = points_prev[valid].reshape(-1, 2)
+        points_curr = points_curr[valid].reshape(-1, 2)
+        if len(points_curr) < self.config.flow_min_vectors:
+            return RadialFlowResult(None, None, int(len(points_curr)))
+
+        displacements = points_curr - points_prev
+        magnitudes = np.linalg.norm(displacements, axis=1)
+        strong = magnitudes >= self.config.flow_min_magnitude
+        if int(np.count_nonzero(strong)) < self.config.flow_min_vectors:
+            return RadialFlowResult(None, None, int(np.count_nonzero(strong)))
+
+        points_curr = points_curr[strong]
+        displacements = displacements[strong]
+
+        # A true burst should have edge motion pointing away from the blob
+        # center, unlike a vehicle that mostly translates in one direction.
+        centroid_local = np.array(
+            [candidate.centroid[0] - x0, candidate.centroid[1] - y0], dtype=np.float32)
+        radial_vectors = points_curr - centroid_local
+        radial_norm = np.linalg.norm(radial_vectors, axis=1) + 1e-6
+        flow_norm = np.linalg.norm(displacements, axis=1) + 1e-6
+        cosines = np.sum(displacements * radial_vectors,
+                         axis=1) / (radial_norm * flow_norm)
+
+        outward_ratio = float(
+            np.mean(cosines > self.config.radial_cosine_threshold))
+        mean_cosine = float(np.mean(cosines))
+        return RadialFlowResult(outward_ratio, mean_cosine, int(len(cosines)))
+
+    def _update_tracks(
+        self,
+        candidates: List[BlobCandidate],
+        frame_idx: int,
+        measurement_ok: bool,
+    ) -> None:
+        if not measurement_ok:
+            self._expire_tracks_without_measurement(frame_idx)
+            return
+
+        matches, unmatched_track_ids, unmatched_candidate_ids = self._match_tracks(
+            candidates)
+
+        for track_id, candidate_id in matches:
+            self._update_single_track(
+                self.tracks[track_id], candidates[candidate_id], frame_idx)
+
+        for track_id in unmatched_track_ids:
+            track = self.tracks[track_id]
+            track.missed_frames += 1
+
+        for candidate_id in unmatched_candidate_ids:
+            self._create_track(candidates[candidate_id], frame_idx)
+
+        self._prune_finished_tracks(frame_idx)
+
+    def _match_tracks(
+        self, candidates: List[BlobCandidate]
+    ) -> Tuple[List[Tuple[int, int]], List[int], List[int]]:
+        if not self.tracks or not candidates:
+            return [], list(self.tracks.keys()), list(range(len(candidates)))
+
+        pairings: List[Tuple[float, int, int]] = []
+        for track_id, track in self.tracks.items():
+            for candidate_id, candidate in enumerate(candidates):
+                score = self._track_candidate_match_score(track, candidate)
+                if score is not None:
+                    pairings.append((score, track_id, candidate_id))
+
+        pairings.sort(key=lambda item: item[0])
+
+        matches: List[Tuple[int, int]] = []
+        used_tracks = set()
+        used_candidates = set()
+
+        for _, track_id, candidate_id in pairings:
+            if track_id in used_tracks or candidate_id in used_candidates:
+                continue
+            used_tracks.add(track_id)
+            used_candidates.add(candidate_id)
+            matches.append((track_id, candidate_id))
+
+        unmatched_track_ids = [
+            track_id for track_id in self.tracks if track_id not in used_tracks]
+        unmatched_candidate_ids = [cid for cid in range(
+            len(candidates)) if cid not in used_candidates]
+        return matches, unmatched_track_ids, unmatched_candidate_ids
+
+    def _track_candidate_match_score(
+        self,
+        track: EventTrack,
+        candidate: BlobCandidate,
+    ) -> Optional[float]:
+        dist = _euclidean(track.centroid, candidate.centroid)
+        if _bboxes_overlap(track.bbox, candidate.bbox):
+            return dist * 0.25
+
+        if dist <= self.config.track_match_distance:
+            return dist
+
+        trajectory_dist = self._trajectory_distance(track, candidate.centroid)
+        if trajectory_dist is not None and trajectory_dist <= self.config.trajectory_match_distance:
+            return self.config.track_match_distance + trajectory_dist
+
+        return None
+
+    def _trajectory_distance(
+        self,
+        track: EventTrack,
+        point: Tuple[float, float],
+    ) -> Optional[float]:
+        return self._trajectory_distance_from_history(list(track.centroid_history), point)
+
+    def _trajectory_distance_from_history(
+        self,
+        history: List[Tuple[float, float]],
+        point: Tuple[float, float],
+    ) -> Optional[float]:
+        if not history:
+            return None
+        if len(history) == 1:
+            return _euclidean(history[0], point)
+
+        segments: List[Tuple[Tuple[float, float], Tuple[float, float]]] = []
+        for start, end in zip(history[:-1], history[1:]):
+            segments.append((start, end))
+
+        prev_pt = np.array(history[-2], dtype=np.float32)
+        last_pt = np.array(history[-1], dtype=np.float32)
+        direction = last_pt - prev_pt
+        if float(np.linalg.norm(direction)) > 1e-6:
+            extended_end = tuple(
+                (last_pt + direction * self.config.trajectory_extrapolation_scale).tolist())
+            segments.append((history[-1], extended_end))
+
+        return min(_point_to_segment_distance(point, start, end) for start, end in segments)
+
+    def _create_track(self, candidate: BlobCandidate, frame_idx: int) -> None:
+        track = EventTrack(
+            event_id=self.next_event_id,
+            confirmed=False,
+            first_seen_frame=frame_idx,
+            last_seen_frame=frame_idx,
+            centroid=candidate.centroid,
+            bbox=candidate.bbox,
+        )
+        track.area_history.append(candidate.area)
+        track.centroid_history.append(candidate.centroid)
+        track.bbox_history.append(candidate.bbox)
+        self.tracks[track.event_id] = track
+        self.next_event_id += 1
+
+    def _update_single_track(self, track: EventTrack, candidate: BlobCandidate, frame_idx: int) -> None:
+        prev_area = track.current_area if track.area_history else max(
+            candidate.area, 1.0)
+        instant_growth = candidate.area / max(prev_area, 1.0)
+        prev_centroid = track.centroid
+        prev_bbox = track.bbox
+
+        track.area_history.append(candidate.area)
+        short_growth = self._compute_short_growth(track)
+        track.growth_history.append(short_growth)
+
+        track.centroid = candidate.centroid
+        track.bbox = candidate.bbox
+        track.centroid_history.append(candidate.centroid)
+        track.bbox_history.append(candidate.bbox)
+        track.last_seen_frame = frame_idx
+        track.missed_frames = 0
+
+        radial_ratio = None
+        if candidate.radial_flow is not None and candidate.radial_flow.outward_ratio is not None:
+            radial_ratio = candidate.radial_flow.outward_ratio
+            track.radial_history.append(radial_ratio)
+
+        effective_growth = max(instant_growth, short_growth)
+        expansion_pass, expansion_metrics = self._check_expansion_motion(
+            prev_bbox, candidate.bbox, prev_centroid, candidate.centroid)
+        if effective_growth < self.config.stop_growth_ratio:
+            # Once the area stops expanding rapidly, we start counting down to
+            # silence the event instead of tracking diffuse smoke forever.
+            track.non_growth_frames += 1
+        else:
+            track.non_growth_frames = 0
+
+        if not track.confirmed:
+            radial_pass = False
+            if (
+                candidate.radial_flow is not None
+                and candidate.radial_flow.outward_ratio is not None
+                and candidate.radial_flow.valid_vectors >= self.config.flow_min_vectors
+            ):
+                radial_pass = candidate.radial_flow.outward_ratio >= self.config.min_radial_outward_ratio
+
+            strong_growth_override = (
+                effective_growth >= self.config.strong_growth_override_ratio
+                and expansion_metrics["center_shift_ratio"] <= self.config.max_center_shift_ratio
+            )
+            motion_signature_pass = expansion_pass or radial_pass or strong_growth_override
+
+            if (
+                candidate.area >= self.config.min_confirm_area
+                and effective_growth >= self.config.min_growth_ratio
+                and motion_signature_pass
+            ):
+                if self._matches_recent_confirmed_event(track, candidate, frame_idx):
+                    return
+                # The event ID is only surfaced after the blob demonstrates a
+                # burst-like growth signature.
+                track.confirmed = True
+                track.confirm_frame = frame_idx
+                self.pending_confirmations.append(
+                    ConfirmedEvent(
+                        event_id=track.event_id,
+                        frame_idx=frame_idx,
+                        timestamp_sec=frame_idx / self.fps,
+                        bbox=candidate.bbox,
+                        area=candidate.area,
+                        growth_ratio=effective_growth,
+                        radial_ratio=radial_ratio,
+                    )
+                )
+                print(
+                    "[INFO] Confirm event "
+                    f"{track.event_id} at frame {frame_idx}: "
+                    f"area={candidate.area:.1f}, growth={effective_growth:.2f}, "
+                    f"radial={radial_ratio if radial_ratio is not None else 'NA'}, "
+                    f"expand={expansion_metrics['width_growth']:.2f}/{expansion_metrics['height_growth']:.2f}, "
+                    f"shift={expansion_metrics['center_shift_ratio']:.2f}"
+                )
+
+    def _matches_recent_confirmed_event(
+        self,
+        track: EventTrack,
+        candidate: BlobCandidate,
+        frame_idx: int,
+    ) -> bool:
+        for other in self.tracks.values():
+            if not other.confirmed or other.confirm_frame is None or other.event_id == track.event_id:
+                continue
+            if self._is_duplicate_confirmation(
+                frame_idx,
+                other.last_seen_frame,
+                other.bbox,
+                other.centroid,
+                list(other.centroid_history),
+                candidate,
+            ):
+                return True
+
+        for snapshot in self.recent_confirmed_tracks:
+            if snapshot.event_id == track.event_id:
+                continue
+            if self._is_duplicate_confirmation(
+                frame_idx,
+                snapshot.last_seen_frame,
+                snapshot.bbox_history[-1],
+                snapshot.centroid_history[-1],
+                snapshot.centroid_history,
+                candidate,
+            ):
+                return True
+        return False
+
+    def _is_duplicate_confirmation(
+        self,
+        frame_idx: int,
+        last_seen_frame: int,
+        bbox: Tuple[int, int, int, int],
+        centroid: Tuple[float, float],
+        centroid_history: List[Tuple[float, float]],
+        candidate: BlobCandidate,
+    ) -> bool:
+        if frame_idx - last_seen_frame > self.recent_confirmed_match_frames:
+            return False
+        if _bboxes_overlap(bbox, candidate.bbox):
+            return True
+        if _euclidean(centroid, candidate.centroid) <= self.config.track_match_distance:
+            return True
+        trajectory_dist = self._trajectory_distance_from_history(centroid_history, candidate.centroid)
+        return trajectory_dist is not None and trajectory_dist <= self.config.trajectory_match_distance
+
+    def _check_expansion_motion(
+        self,
+        prev_bbox: Tuple[int, int, int, int],
+        curr_bbox: Tuple[int, int, int, int],
+        prev_centroid: Tuple[float, float],
+        curr_centroid: Tuple[float, float],
+    ) -> Tuple[bool, Dict[str, float]]:
+        prev_w = max(prev_bbox[2], 1)
+        prev_h = max(prev_bbox[3], 1)
+        curr_w = max(curr_bbox[2], 1)
+        curr_h = max(curr_bbox[3], 1)
+
+        width_growth = curr_w / prev_w
+        height_growth = curr_h / prev_h
+        prev_diag = float(np.hypot(prev_w, prev_h))
+        curr_diag = float(np.hypot(curr_w, curr_h))
+        center_shift = _euclidean(prev_centroid, curr_centroid)
+        center_shift_ratio = center_shift / \
+            max(0.5 * (prev_diag + curr_diag), 1.0)
+        expansion_balance = min(width_growth, height_growth) / \
+            max(max(width_growth, height_growth), 1e-6)
+
+        passes = (
+            min(width_growth, height_growth) >= self.config.min_dimension_growth_ratio
+            and expansion_balance >= self.config.min_expansion_balance
+            and center_shift_ratio <= self.config.max_center_shift_ratio
+        )
+        return passes, {
+            "width_growth": float(width_growth),
+            "height_growth": float(height_growth),
+            "center_shift_ratio": float(center_shift_ratio),
+            "expansion_balance": float(expansion_balance),
+        }
+
+    def _compute_short_growth(self, track: EventTrack) -> float:
+        if len(track.area_history) < 2:
+            return 1.0
+        history = list(track.area_history)
+        baseline_idx = max(0, len(history) - 1 -
+                           self.config.growth_window_frames)
+        baseline_area = history[baseline_idx]
+        return float(history[-1] / max(baseline_area, 1.0))
+
+    def _expire_tracks_without_measurement(self, frame_idx: int) -> None:
+        self._prune_finished_tracks(frame_idx)
+
+    def _prune_finished_tracks(self, frame_idx: int) -> None:
+        expired: List[Tuple[int, str]] = []
+        for track_id, track in self.tracks.items():
+            if track.confirmed and track.confirm_frame is not None:
+                if frame_idx - track.confirm_frame >= self.max_event_age_frames:
+                    expired.append((track_id, "timeout"))
+                    continue
+                if track.non_growth_frames >= self.config.stop_patience_frames:
+                    expired.append((track_id, "growth_stalled"))
+                    continue
+
+            if track.missed_frames > self.config.max_missed_frames:
+                expired.append((track_id, "missed"))
+                continue
+
+            if not track.confirmed and frame_idx - track.first_seen_frame >= self.config.max_tentative_age_frames:
+                expired.append((track_id, "tentative_timeout"))
+
+        for track_id, reason in expired:
+            track = self.tracks.pop(track_id, None)
+            if track is None or not track.confirmed:
+                continue
+            if track.confirm_frame is not None:
+                self.recent_confirmed_tracks.append(
+                    ConfirmedTrackSnapshot(
+                        event_id=track.event_id,
+                        confirm_frame=track.confirm_frame,
+                        last_seen_frame=track.last_seen_frame,
+                        centroid_history=list(track.centroid_history),
+                        bbox_history=list(track.bbox_history),
+                    )
+                )
+            print(
+                f"[INFO] Drop event {track.event_id} at frame {frame_idx}: "
+                f"reason={reason}, age_frames={frame_idx - (track.confirm_frame or frame_idx)}"
+            )
+
+    def _draw_visualization(
+        self,
+        vis: np.ndarray,
+        frame_idx: int,
+        diff_img: np.ndarray,
+        motion_mask: np.ndarray,
+        align_result: Optional[HomographyResult],
+        measurement_ok: bool,
+        candidates: List[BlobCandidate],
+    ) -> np.ndarray:
+        if self.config.show_candidate_boxes:
+            for candidate in candidates:
+                x, y, w, h = candidate.bbox
+                cv2.rectangle(vis, (x, y), (x + w, y + h), (0, 170, 255), 1)
+
+        visible_event_count = 0
+        for track in self.tracks.values():
+            if not track.confirmed:
+                continue
+            if track.confirm_frame is None:
+                continue
+            if frame_idx - track.confirm_frame > self.confirmed_box_hold_frames:
+                continue
+            visible_event_count += 1
+            x, y, w, h = track.bbox
+            cv2.rectangle(vis, (x, y), (x + w, y + h), (0, 0, 255), 2)
+            label = f"EVENT {track.event_id}"
+            if track.growth_history:
+                label += f" g={track.growth_history[-1]:.2f}"
+            if track.radial_history:
+                label += f" r={track.radial_history[-1]:.2f}"
+            cv2.putText(
+                vis,
+                label,
+                (x, max(20, y - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (0, 0, 255),
+                2,
+                cv2.LINE_AA,
+            )
+
+        if self.config.show_status_overlay:
+            info_lines = [
+                f"frame={frame_idx}",
+                f"visible_events={visible_event_count}",
+                f"phase2_ok={int(measurement_ok)}",
+            ]
+            if align_result is None:
+                info_lines.append("align=warmup")
+            elif align_result.ok:
+                info_lines.append(
+                    f"align={align_result.method} {align_result.inliers}/{align_result.matches} "
+                    f"({align_result.inlier_ratio:.2f})"
+                )
+                if align_result.dx is not None and align_result.dy is not None:
+                    scale_text = "?"
+                    if align_result.scale is not None:
+                        scale_text = f"{align_result.scale:.4f}"
+                    rotation_text = "?"
+                    if align_result.rotation_deg is not None:
+                        rotation_text = f"{align_result.rotation_deg:.2f}deg"
+                    info_lines.append(
+                        f"global_shift=({align_result.dx:.1f}, {align_result.dy:.1f}) scale={scale_text} rot={rotation_text}"
+                    )
+            else:
+                info_lines.append(f"align=failed({align_result.method})")
+
+            y0 = 24
+            for line in info_lines:
+                cv2.putText(
+                    vis,
+                    line,
+                    (12, y0),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.60,
+                    (255, 255, 255),
+                    2,
+                    cv2.LINE_AA,
+                )
+                y0 += 24
+
+        if self.config.draw_debug_tiles:
+            vis = self._overlay_debug_tiles(vis, diff_img, motion_mask)
+        return vis
+
+    def _overlay_debug_tiles(
+        self,
+        canvas: np.ndarray,
+        diff_img: np.ndarray,
+        motion_mask: np.ndarray,
+    ) -> np.ndarray:
+        tile_w = max(canvas.shape[1] // 5, 1)
+        tile_h = max(canvas.shape[0] // 5, 1)
+
+        diff_tile = cv2.resize(cv2.cvtColor(
+            diff_img, cv2.COLOR_GRAY2BGR), (tile_w, tile_h))
+        mask_tile = cv2.resize(cv2.cvtColor(
+            motion_mask, cv2.COLOR_GRAY2BGR), (tile_w, tile_h))
+
+        x0 = canvas.shape[1] - tile_w - 8
+        canvas[8: 8 + tile_h, x0: x0 + tile_w] = diff_tile
+        canvas[16 + tile_h: 16 + 2 * tile_h, x0: x0 + tile_w] = mask_tile
+
+        cv2.putText(canvas, "absdiff", (x0, 24), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45, (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.putText(
+            canvas,
+            "motion_mask",
+            (x0, 32 + tile_h),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+        return canvas
+
+
+def _odd_ksize(value: int) -> int:
+    if value <= 1:
+        return 1
+    return value if value % 2 == 1 else value + 1
+
+
+def _contour_centroid(contour: np.ndarray, fallback: Tuple[float, float]) -> Tuple[float, float]:
+    moments = cv2.moments(contour)
+    if abs(moments["m00"]) < 1e-6:
+        return fallback
+    return moments["m10"] / moments["m00"], moments["m01"] / moments["m00"]
+
+
+def _euclidean(a: Tuple[float, float], b: Tuple[float, float]) -> float:
+    return float(np.hypot(a[0] - b[0], a[1] - b[1]))
+
+
+def _bboxes_overlap(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> bool:
+    ax0, ay0, aw, ah = a
+    bx0, by0, bw, bh = b
+    ax1 = ax0 + aw
+    ay1 = ay0 + ah
+    bx1 = bx0 + bw
+    by1 = by0 + bh
+    return min(ax1, bx1) > max(ax0, bx0) and min(ay1, by1) > max(ay0, by0)
+
+
+def _point_to_segment_distance(
+    point: Tuple[float, float],
+    start: Tuple[float, float],
+    end: Tuple[float, float],
+) -> float:
+    point_vec = np.array(point, dtype=np.float32)
+    start_vec = np.array(start, dtype=np.float32)
+    end_vec = np.array(end, dtype=np.float32)
+    segment = end_vec - start_vec
+    length_sq = float(np.dot(segment, segment))
+    if length_sq <= 1e-6:
+        return float(np.linalg.norm(point_vec - start_vec))
+
+    t = float(np.dot(point_vec - start_vec, segment) / length_sq)
+    t = min(max(t, 0.0), 1.0)
+    projection = start_vec + t * segment
+    return float(np.linalg.norm(point_vec - projection))
+
+
+def _default_video_from_cwd() -> Optional[Path]:
+    mp4_files = sorted(Path.cwd().glob("*.mp4"))
+    return mp4_files[0] if mp4_files else None
+
+
+def _default_batch_output_dir(input_dir: Path) -> Path:
+    return input_dir / "batch_results"
+
+
+def _ensure_batch_subdirs(output_root: Path) -> Tuple[Path, Path, Path]:
+    annotated_dir = output_root / "annotated_videos"
+    detection_dir = output_root / "detection_frames"
+    logs_dir = output_root / "logs"
+    annotated_dir.mkdir(parents=True, exist_ok=True)
+    detection_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    return annotated_dir, detection_dir, logs_dir
+
+
+def _save_detection_snapshot(
+    video_path: Path,
+    detection_root: Path,
+    vis_frame: np.ndarray,
+    event: ConfirmedEvent,
+) -> DetectionArtifact:
+    video_dir = detection_root / video_path.stem
+    video_dir.mkdir(parents=True, exist_ok=True)
+
+    stem = (
+        f"{video_path.stem}__event{event.event_id:03d}"
+        f"__frame{event.frame_idx:06d}__t{event.timestamp_sec:08.2f}"
+    )
+    full_frame_path = video_dir / f"{stem}__full.jpg"
+    crop_path = video_dir / f"{stem}__crop.jpg"
+
+    snapshot = vis_frame.copy()
+    x, y, w, h = event.bbox
+    cv2.rectangle(snapshot, (x, y), (x + w, y + h), (0, 255, 0), 3)
+    overlay_text = f"EVENT {event.event_id} frame={event.frame_idx} t={event.timestamp_sec:.2f}s"
+    cv2.putText(
+        snapshot,
+        overlay_text,
+        (max(12, x), max(28, y - 12)),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.70,
+        (0, 255, 0),
+        2,
+        cv2.LINE_AA,
+    )
+    cv2.imwrite(str(full_frame_path), snapshot)
+
+    pad = 40
+    x0 = max(x - pad, 0)
+    y0 = max(y - pad, 0)
+    x1 = min(x + w + pad, snapshot.shape[1])
+    y1 = min(y + h + pad, snapshot.shape[0])
+    crop = snapshot[y0:y1, x0:x1]
+    cv2.imwrite(str(crop_path), crop)
+
+    return DetectionArtifact(
+        video_name=video_path.name,
+        event_id=event.event_id,
+        frame_idx=event.frame_idx,
+        timestamp_sec=event.timestamp_sec,
+        area=event.area,
+        growth_ratio=event.growth_ratio,
+        radial_ratio=event.radial_ratio,
+        full_frame_path=full_frame_path,
+        crop_path=crop_path,
+    )
+
+
+def _write_batch_csvs(
+    logs_dir: Path,
+    video_summaries: List[VideoRunSummary],
+    detections: List[DetectionArtifact],
+) -> None:
+    summary_csv = logs_dir / "video_summary.csv"
+    detection_csv = logs_dir / "detections.csv"
+
+    with summary_csv.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["video_name", "processed_frames",
+                        "confirmed_events", "snapshots_saved", "output_video_path"])
+        for row in video_summaries:
+            writer.writerow(
+                [
+                    row.video_name,
+                    row.processed_frames,
+                    row.confirmed_events,
+                    row.snapshots_saved,
+                    str(row.output_video_path) if row.output_video_path else "",
+                ]
+            )
+
+    with detection_csv.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            [
+                "video_name",
+                "event_id",
+                "frame_idx",
+                "timestamp_sec",
+                "area",
+                "growth_ratio",
+                "radial_ratio",
+                "full_frame_path",
+                "crop_path",
+            ]
+        )
+        for row in detections:
+            writer.writerow(
+                [
+                    row.video_name,
+                    row.event_id,
+                    row.frame_idx,
+                    f"{row.timestamp_sec:.3f}",
+                    f"{row.area:.3f}",
+                    f"{row.growth_ratio:.3f}",
+                    "" if row.radial_ratio is None else f"{row.radial_ratio:.3f}",
+                    str(row.full_frame_path),
+                    str(row.crop_path),
+                ]
+            )
+
+
+def run_video(
+    video_path: Path,
+    config: DetectorConfig,
+    start_frame: int = 0,
+    max_frames: int = -1,
+    display_enabled: bool = False,
+    output_video_path: Optional[Path] = None,
+    detection_root: Optional[Path] = None,
+    report_every: int = 300,
+) -> Tuple[VideoRunSummary, List[DetectionArtifact]]:
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise RuntimeError(f"Failed to open video: {video_path}")
+
+    if start_frame > 0:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    detector = InstantSmokeDustDetector(config, fps)
+
+    writer = None
+    frame_idx = start_frame
+    processed = 0
+    confirmed_count = 0
+    detections: List[DetectionArtifact] = []
+
+    if output_video_path is not None:
+        output_video_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+
+            vis = detector.process_frame(frame, frame_idx)
+
+            if writer is None and output_video_path is not None:
+                height, width = vis.shape[:2]
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                writer = cv2.VideoWriter(
+                    str(output_video_path), fourcc, detector.fps, (width, height))
+
+            if writer is not None:
+                writer.write(vis)
+
+            for event in detector.consume_pending_confirmations():
+                confirmed_count += 1
+                if detection_root is not None:
+                    detections.append(_save_detection_snapshot(
+                        video_path, detection_root, vis, event))
+
+            if display_enabled:
+                show_frame = vis
+                if config.display_scale != 1.0:
+                    show_frame = cv2.resize(
+                        vis,
+                        None,
+                        fx=config.display_scale,
+                        fy=config.display_scale,
+                        interpolation=cv2.INTER_AREA,
+                    )
+                cv2.imshow("Instant Smoke / Dust POC", show_frame)
+                key = cv2.waitKey(1) & 0xFF
+                if key in (27, ord("q")):
+                    break
+
+            frame_idx += 1
+            processed += 1
+            if report_every > 0 and processed % report_every == 0:
+                print(
+                    f"[INFO] {video_path.name}: processed {processed} frames")
+            if max_frames > 0 and processed >= max_frames:
+                break
+    finally:
+        cap.release()
+        if writer is not None:
+            writer.release()
+        if display_enabled:
+            cv2.destroyAllWindows()
+
+    summary = VideoRunSummary(
+        video_name=video_path.name,
+        processed_frames=processed,
+        confirmed_events=confirmed_count,
+        snapshots_saved=len(detections) * 2,
+        output_video_path=output_video_path,
+    )
+    return summary, detections
+
+
+def run_batch(
+    input_dir: Path,
+    output_root: Path,
+    config: DetectorConfig,
+    video_glob: str,
+    start_frame: int = 0,
+    max_frames: int = -1,
+    report_every: int = 300,
+) -> Tuple[List[VideoRunSummary], List[DetectionArtifact]]:
+    videos = sorted(input_dir.glob(video_glob))
+    if not videos:
+        raise FileNotFoundError(
+            f"No videos found in {input_dir} matching {video_glob}")
+
+    annotated_dir, detection_dir, logs_dir = _ensure_batch_subdirs(output_root)
+    all_summaries: List[VideoRunSummary] = []
+    all_detections: List[DetectionArtifact] = []
+
+    print(f"[INFO] Batch input dir: {input_dir}")
+    print(f"[INFO] Batch output dir: {output_root}")
+    print(f"[INFO] Found {len(videos)} videos")
+
+    for idx, video_path in enumerate(videos, start=1):
+        print(f"[INFO] [{idx}/{len(videos)}] Processing {video_path.name}")
+        output_video_path = annotated_dir / f"{video_path.stem}__annotated.mp4"
+        summary, detections = run_video(
+            video_path=video_path,
+            config=config,
+            start_frame=start_frame,
+            max_frames=max_frames,
+            display_enabled=False,
+            output_video_path=output_video_path,
+            detection_root=detection_dir,
+            report_every=report_every,
+        )
+        all_summaries.append(summary)
+        all_detections.extend(detections)
+        print(
+            f"[INFO] Finished {video_path.name}: "
+            f"frames={summary.processed_frames}, events={summary.confirmed_events}, "
+            f"snapshots={summary.snapshots_saved}"
+        )
+
+    _write_batch_csvs(logs_dir, all_summaries, all_detections)
+    return all_summaries, all_detections
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="POC detector for instantaneous dust/smoke anomalies under drone ego-motion."
+    )
+    parser.add_argument("--video", type=str, default=None,
+                        help="Input video path. Defaults to first *.mp4 in CWD.")
+    parser.add_argument("--batch-dir", type=str, default=None,
+                        help="Process all videos in this directory.")
+    parser.add_argument("--video-glob", type=str,
+                        default="*.mp4", help="Glob used in batch mode.")
+    parser.add_argument("--output", type=str, default=None,
+                        help="Single-video annotated output path.")
+    parser.add_argument("--output-dir", type=str, default=None,
+                        help="Batch output root or single-video artifact root.")
+    parser.add_argument("--start-frame", type=int, default=0,
+                        help="Start processing from a specific frame.")
+    parser.add_argument("--max-frames", type=int, default=-1,
+                        help="Process only the first N frames after start-frame.")
+    parser.add_argument("--no-display", action="store_true",
+                        help="Disable cv2.imshow window.")
+    parser.add_argument("--report-every", type=int, default=300,
+                        help="Print progress every N processed frames.")
+
+    parser.add_argument("--downscale", type=float, default=0.5,
+                        help="Spatial downsampling factor.")
+    parser.add_argument("--stride", type=int, default=5,
+                        help="Frame gap N used for T vs T-N differencing.")
+    parser.add_argument("--diff-threshold", type=int, default=40,
+                        help="Threshold for absolute difference image.")
+    parser.add_argument("--min-blob-area", type=float,
+                        default=220.0, help="Minimum candidate contour area.")
+    parser.add_argument("--min-growth-ratio", type=float,
+                        default=2.2, help="Short-term area explosion threshold.")
+    parser.add_argument("--stop-growth-ratio", type=float, default=1.08,
+                        help="Silence event when growth falls below this.")
+    parser.add_argument("--max-age-sec", type=float, default=3.0,
+                        help="Maximum active lifetime per confirmed event.")
+    parser.add_argument("--track-match-distance", type=float,
+                        default=120.0, help="Track association radius in pixels.")
+    parser.add_argument("--max-missed-frames", type=int, default=6,
+                        help="How many missing frames an event can survive.")
+    parser.add_argument(
+        "--min-dimension-growth-ratio",
+        type=float,
+        default=1.08,
+        help="Minimum width/height growth used to distinguish expansion from translation.",
+    )
+    parser.add_argument(
+        "--max-center-shift-ratio",
+        type=float,
+        default=0.65,
+        help="Reject translation-dominant motion when centroid shifts too much relative to blob size.",
+    )
+    parser.add_argument(
+        "--split-blob-area",
+        type=float,
+        default=2500.0,
+        help="Try watershed splitting when a motion blob becomes larger than this area.",
+    )
+    parser.add_argument("--disable-flow-check", action="store_true",
+                        help="Disable radial optical-flow validation.")
+    parser.add_argument("--hide-debug-tiles", action="store_true",
+                        help="Hide absdiff / mask thumbnails.")
+    parser.add_argument("--show-candidates", action="store_true",
+                        help="Draw orange candidate boxes for debugging.")
+    return parser
+
+
+def config_from_args(args: argparse.Namespace) -> DetectorConfig:
+    return DetectorConfig(
+        downscale=args.downscale,
+        stride_frames=max(args.stride, 1),
+        diff_threshold=args.diff_threshold,
+        min_blob_area=args.min_blob_area,
+        min_growth_ratio=args.min_growth_ratio,
+        stop_growth_ratio=args.stop_growth_ratio,
+        max_event_age_sec=args.max_age_sec,
+        track_match_distance=args.track_match_distance,
+        max_missed_frames=args.max_missed_frames,
+        min_dimension_growth_ratio=args.min_dimension_growth_ratio,
+        max_center_shift_ratio=args.max_center_shift_ratio,
+        split_blob_area=args.split_blob_area,
+        enable_radial_flow_check=not args.disable_flow_check,
+        draw_debug_tiles=not args.hide_debug_tiles,
+        show_candidate_boxes=args.show_candidates,
+    )
+
+
+def main() -> None:
+    parser = build_arg_parser()
+    args = parser.parse_args()
+
+    config = config_from_args(args)
+
+    if args.batch_dir:
+        input_dir = Path(args.batch_dir)
+        if not input_dir.exists():
+            raise FileNotFoundError(
+                f"Batch input directory does not exist: {input_dir}")
+        output_root = Path(
+            args.output_dir) if args.output_dir else _default_batch_output_dir(input_dir)
+        summaries, detections = run_batch(
+            input_dir=input_dir,
+            output_root=output_root,
+            config=config,
+            video_glob=args.video_glob,
+            start_frame=args.start_frame,
+            max_frames=args.max_frames,
+            report_every=args.report_every,
+        )
+        print(
+            f"[INFO] Batch complete: videos={len(summaries)}, "
+            f"confirmed_events={sum(s.confirmed_events for s in summaries)}, "
+            f"saved_images={sum(s.snapshots_saved for s in summaries)}"
+        )
+        print(f"[INFO] Output root: {output_root}")
+        print(
+            f"[INFO] Detection log: {output_root / 'logs' / 'detections.csv'}")
+        return
+
+    video_path = Path(args.video) if args.video else _default_video_from_cwd()
+    if video_path is None or not video_path.exists():
+        raise FileNotFoundError(
+            "No input video found. Use --video or place an .mp4 in the current directory.")
+
+    output_video_path = Path(args.output) if args.output else None
+    detection_root = None
+    if args.output_dir:
+        output_root = Path(args.output_dir)
+        annotated_dir, detection_dir, _ = _ensure_batch_subdirs(output_root)
+        detection_root = detection_dir
+        if output_video_path is None:
+            output_video_path = annotated_dir / \
+                f"{video_path.stem}__annotated.mp4"
+
+    summary, detections = run_video(
+        video_path=video_path,
+        config=config,
+        start_frame=args.start_frame,
+        max_frames=args.max_frames,
+        display_enabled=not args.no_display,
+        output_video_path=output_video_path,
+        detection_root=detection_root,
+        report_every=args.report_every,
+    )
+    print(
+        f"[INFO] Finished {summary.video_name}: "
+        f"frames={summary.processed_frames}, events={summary.confirmed_events}, "
+        f"snapshots={summary.snapshots_saved}"
+    )
+    if detections:
+        print(f"[INFO] Detection frames saved under: {detection_root}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
