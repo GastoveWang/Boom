@@ -1,0 +1,4 @@
+# PySpin is installed from the vendor's matching Spinnaker Jetson/aarch64 SDK.
+# Prefer JetPack's system OpenCV build; do not replace it with a pip wheel.
+numpy
+Pillow
