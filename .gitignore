@@ -19,6 +19,9 @@ outputs/
 tmp/
 temp/
 
+# Local documentation
+doc/
+
 # Local datasets / media
 data/
 *.mp4
@@ -28,4 +31,3 @@ data/
 *.jpg
 *.jpeg
 *.png
-
