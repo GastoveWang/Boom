@@ -1,9 +1,9 @@
 ﻿from __future__ import annotations
-from mine.offline.smoke_dust_detector import DetectorConfig, InstantSmokeDustDetector
-
+import argparse
 import math
 import re
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -13,24 +13,28 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from PIL.ExifTags import GPSTAGS
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from mine.offline.smoke_dust_detector import DetectorConfig, InstantSmokeDustDetector
 
-IMAGE_PATH = r"C:\Users\roger\IDEA\Boom\data\0603\DJI_007_P.JPG"
-VIDEO_PATH = r"C:\Users\roger\IDEA\Boom\data\Focus\DJI_0331.mp4"
-OUTPUT_ROOT = r"C:\Users\roger\IDEA\Boom\output"
+
+IMAGE_PATH: Optional[str] = None
+VIDEO_PATH: Optional[str] = None
+OUTPUT_ROOT = str(PROJECT_ROOT / "output" / "offline")
 
 UI_MODE = "client"
 DISPLAY_SCALE = 0.5
 DISPLAY_SECONDS = 10.0
 START_FRAME = 0
 MAX_FRAMES = -1
-NO_DISPLAY = False
+NO_DISPLAY = True
 PANEL_WIDTH = 500
 
 UI_FONT_PATHS = [
+    "/System/Library/Fonts/PingFang.ttc",
+    "/System/Library/Fonts/STHeiti Medium.ttc",
     "C:/Windows/Fonts/msjh.ttc",
     "C:/Windows/Fonts/msjhbd.ttc",
     "C:/Windows/Fonts/mingliu.ttc",
@@ -231,6 +235,40 @@ def resolve_video_path(image_path: Path) -> Path:
     raise FileNotFoundError(
         f"Could not find matching video for {image_path.name}. Expected something like {video_stem}.MP4"
     )
+
+
+def _default_video_path() -> Optional[Path]:
+    data_dir = PROJECT_ROOT / "data"
+    for pattern in ("*.mp4", "*.MP4", "*.mov", "*.MOV", "*.avi", "*.AVI"):
+        matches = sorted(data_dir.rglob(pattern)) if data_dir.exists() else []
+        if matches:
+            return matches[0]
+    return None
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Offline smoke/dust detection with Terminal progress."
+    )
+    parser.add_argument("--video", type=Path,
+                        help="Input video; defaults to the first video under data/.")
+    parser.add_argument("--reference-image", type=Path,
+                        help="Optional DJI image containing GPS/XMP metadata.")
+    parser.add_argument("--output-dir", type=Path, default=Path(OUTPUT_ROOT))
+    parser.add_argument("--start-frame", type=int, default=START_FRAME)
+    parser.add_argument("--max-frames", type=int, default=MAX_FRAMES)
+    parser.add_argument("--report-every", type=int, default=60,
+                        help="Print progress every N frames (default: 60).")
+    return parser
+
+
+def _format_duration(seconds: float) -> str:
+    seconds = max(int(round(seconds)), 0)
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:02d}:{seconds:02d}"
 
 
 def build_detector_config() -> DetectorConfig:
@@ -545,13 +583,24 @@ def twd97_to_wgs84(easting: float, northing: float) -> Tuple[float, float]:
 
 
 def main() -> None:
+    args = build_arg_parser().parse_args()
     config = build_detector_config()
-    image_path = Path(IMAGE_PATH)
-    if not image_path.exists():
-        raise FileNotFoundError(f"Input image does not exist: {image_path}")
+    image_path = args.reference_image or (Path(IMAGE_PATH) if IMAGE_PATH else None)
+    if image_path is not None and not image_path.exists():
+        raise FileNotFoundError(f"Reference image does not exist: {image_path}")
+    if image_path is not None:
+        geo = read_geo_reference_from_image(image_path)
+    else:
+        geo = GeoReference()
+        print("[WARN] No reference image supplied; using default geo reference.")
 
-    geo = read_geo_reference_from_image(image_path)
-    video_path = resolve_video_path(image_path)
+    video_path = args.video or (Path(VIDEO_PATH) if VIDEO_PATH else None)
+    if video_path is None and image_path is not None:
+        video_path = resolve_video_path(image_path)
+    if video_path is None:
+        video_path = _default_video_path()
+    if video_path is None:
+        raise FileNotFoundError("No input video found. Use --video or place a video under data/.")
     if not video_path.exists():
         raise FileNotFoundError(f"Input video does not exist: {video_path}")
 
@@ -559,19 +608,20 @@ def main() -> None:
     if not cap.isOpened():
         raise RuntimeError(f"Failed to open video: {video_path}")
 
-    if START_FRAME > 0:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, START_FRAME)
+    if args.start_frame > 0:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, args.start_frame)
 
     fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     detector = InstantSmokeDustDetector(config, fps)
 
     base_name = video_path.stem
-    output_dir = Path(OUTPUT_ROOT) / base_name
+    output_dir = args.output_dir / base_name
     output_dir.mkdir(parents=True, exist_ok=True)
     output_video_path = output_dir / f"output_{base_name}.mp4"
 
     writer = None
-    frame_idx = START_FRAME
+    frame_idx = args.start_frame
     processed = 0
     recent_events: List[LoggedEvent] = []
     recent_red_events: List[LoggedEvent] = []
@@ -579,6 +629,18 @@ def main() -> None:
     keep_frames = max(int(round(DISPLAY_SECONDS * detector.fps)), 1)
     red_hold_frames = max(int(round(CONFIRMED_BOX_HOLD_SEC * detector.fps)), 1)
     panel_width = get_panel_width(UI_MODE)
+    available_frames = max(frame_count - args.start_frame, 0) if frame_count else 0
+    target_frames = available_frames
+    if args.max_frames > 0:
+        target_frames = min(target_frames, args.max_frames) if target_frames else args.max_frames
+    started_at = time.monotonic()
+
+    print("[INFO] Display: disabled (headless)")
+    if target_frames:
+        print(
+            f"[INFO] Workload: {target_frames} frames "
+            f"({_format_duration(target_frames / detector.fps)} of video)"
+        )
 
     try:
         while True:
@@ -650,26 +712,42 @@ def main() -> None:
 
             writer.write(combined)
 
-            if not NO_DISPLAY:
-                cv2.imshow("Offline Smoke / Dust Demo", combined)
-                if cv2.waitKey(1) & 0xFF in (27, ord("q")):
-                    break
-
             frame_idx += 1
             processed += 1
-            if MAX_FRAMES > 0 and processed >= MAX_FRAMES:
+            report_every = max(args.report_every, 1)
+            if processed % report_every == 0 or (target_frames and processed >= target_frames):
+                elapsed = max(time.monotonic() - started_at, 1e-6)
+                processing_fps = processed / elapsed
+                progress = processed / target_frames if target_frames else 0.0
+                remaining = (
+                    (target_frames - processed) / processing_fps
+                    if target_frames and processing_fps > 0 else 0.0
+                )
+                print(
+                    f"[PROGRESS] {processed}/{target_frames or '?'} frames "
+                    f"({progress * 100:6.2f}%) "
+                    f"| video={_format_duration(frame_idx / detector.fps)} "
+                    f"| speed={processing_fps:.2f} fps "
+                    f"| elapsed={_format_duration(elapsed)} "
+                    f"| ETA={_format_duration(remaining)}",
+                    flush=True,
+                )
+            if args.max_frames > 0 and processed >= args.max_frames:
                 break
     finally:
         cap.release()
         if writer is not None:
             writer.release()
-        if not NO_DISPLAY:
-            cv2.destroyAllWindows()
 
     log_path = write_coordinate_log(output_dir, base_name, all_events)
     print(f"[INFO] Processed frames: {processed}")
     print(f"[INFO] Confirmed events: {len(all_events)}")
-    print(f"[INFO] Image metadata source: {image_path}")
+    guard_summary = detector.camera_guard_summary()
+    if guard_summary:
+        summary_text = ", ".join(
+            f"{reason}={count}" for reason, count in sorted(guard_summary.items()))
+        print(f"[INFO] Camera guard skipped frames: {summary_text}")
+    print(f"[INFO] Image metadata source: {image_path or 'configured defaults'}")
     print(
         f"[INFO] Geo reference: lon={geo.lon:.7f}, lat={geo.lat:.7f}, "
         f"alt={geo.alt:.3f}, yaw={geo.yaw:.3f}, pitch={geo.pitch:.3f}, roll={geo.roll:.3f}"

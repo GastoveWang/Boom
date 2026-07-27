@@ -32,6 +32,16 @@ class DetectorConfig:
     homography_min_inliers: int = 15
     homography_min_inlier_ratio: float = 0.35
 
+    # Reject short periods where camera motion/focus makes frame differencing unreliable.
+    camera_guard_enabled: bool = True
+    max_camera_translation_px: float = 6.0
+    max_camera_rotation_deg: float = 0.20
+    max_camera_scale_change: float = 0.008
+    min_focus_sharpness_ratio: float = 0.65
+    max_focus_sharpness_ratio: float = 1.55
+    max_global_residual_ratio: float = 0.10
+    camera_guard_cooldown_frames: int = 4
+
     shi_tomasi_max_corners: int = 800
     shi_tomasi_quality_level: float = 0.01
     shi_tomasi_min_distance: float = 8.0
@@ -107,6 +117,7 @@ class FrameBundle:
     bgr: np.ndarray
     gray: np.ndarray
     diff_gray: np.ndarray
+    sharpness: float
 
 
 @dataclass
@@ -241,6 +252,9 @@ class InstantSmokeDustDetector:
         self.recent_confirmed_tracks: Deque[ConfirmedTrackSnapshot] = deque(maxlen=64)
         self.pending_confirmations: List[ConfirmedEvent] = []
         self.next_event_id = 1
+        self.guard_cooldown = 0
+        self.active_guard_reason: Optional[str] = None
+        self.guard_counts: Dict[str, int] = {}
         self.orb = cv2.ORB_create(
             nfeatures=self.config.orb_features,
             scaleFactor=1.2,
@@ -283,11 +297,15 @@ class InstantSmokeDustDetector:
         if align_result.ok:
             aligned_ref, valid_mask = self._warp_reference(
                 reference.diff_gray, current.gray.shape, align_result)
-            diff_img, motion_mask, candidates, measurement_ok = self._extract_candidates(
-                current.diff_gray,
-                aligned_ref,
-                valid_mask,
-            )
+            guard_reason = self._camera_guard_reason(
+                reference, current, align_result, aligned_ref, valid_mask)
+            guard_blocked = self._update_camera_guard(guard_reason, frame_idx)
+            if not guard_blocked:
+                diff_img, motion_mask, candidates, measurement_ok = self._extract_candidates(
+                    current.diff_gray,
+                    aligned_ref,
+                    valid_mask,
+                )
 
             if measurement_ok and candidates and self.config.enable_radial_flow_check and len(self.history) >= 2:
                 prev_frame = self.history[-2]
@@ -318,6 +336,9 @@ class InstantSmokeDustDetector:
         self.pending_confirmations = []
         return confirmations
 
+    def camera_guard_summary(self) -> Dict[str, int]:
+        return dict(self.guard_counts)
+
     def _build_frame_bundle(self, frame_bgr: np.ndarray, frame_idx: int) -> FrameBundle:
         if self.config.downscale != 1.0:
             frame_bgr = cv2.resize(
@@ -335,7 +356,76 @@ class InstantSmokeDustDetector:
         else:
             diff_gray = gray
 
-        return FrameBundle(index=frame_idx, bgr=frame_bgr, gray=gray, diff_gray=diff_gray)
+        sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+        return FrameBundle(
+            index=frame_idx,
+            bgr=frame_bgr,
+            gray=gray,
+            diff_gray=diff_gray,
+            sharpness=sharpness,
+        )
+
+    def _camera_guard_reason(
+        self,
+        reference: FrameBundle,
+        current: FrameBundle,
+        align_result: HomographyResult,
+        aligned_reference: np.ndarray,
+        valid_mask: np.ndarray,
+    ) -> Optional[str]:
+        if not self.config.camera_guard_enabled:
+            return None
+
+        if align_result.dx is not None and align_result.dy is not None:
+            translation = float(np.hypot(align_result.dx, align_result.dy))
+            if translation > self.config.max_camera_translation_px:
+                return f"camera_translation({translation:.1f}px)"
+        if (
+            align_result.rotation_deg is not None
+            and abs(align_result.rotation_deg) > self.config.max_camera_rotation_deg
+        ):
+            return f"camera_rotation({align_result.rotation_deg:.2f}deg)"
+        if (
+            align_result.scale is not None
+            and abs(align_result.scale - 1.0) > self.config.max_camera_scale_change
+        ):
+            return f"camera_zoom(scale={align_result.scale:.4f})"
+
+        focus_ratio = current.sharpness / max(reference.sharpness, 1e-6)
+        if (
+            focus_ratio < self.config.min_focus_sharpness_ratio
+            or focus_ratio > self.config.max_focus_sharpness_ratio
+        ):
+            return f"focus_change(ratio={focus_ratio:.2f})"
+
+        residual = cv2.absdiff(current.diff_gray, aligned_reference)
+        residual = cv2.bitwise_and(residual, valid_mask)
+        valid_pixels = max(int(cv2.countNonZero(valid_mask)), 1)
+        residual_pixels = int(np.count_nonzero(
+            (residual > self.config.diff_threshold) & (valid_mask > 0)))
+        residual_ratio = residual_pixels / valid_pixels
+        if residual_ratio > self.config.max_global_residual_ratio:
+            return f"global_residual({residual_ratio:.1%})"
+        return None
+
+    def _update_camera_guard(self, reason: Optional[str], frame_idx: int) -> bool:
+        if reason is not None:
+            reason_key = reason.split("(", 1)[0]
+            self.guard_counts[reason_key] = self.guard_counts.get(reason_key, 0) + 1
+            self.guard_cooldown = max(self.config.camera_guard_cooldown_frames, 0)
+            if reason_key != self.active_guard_reason:
+                print(f"[GUARD] Pause detection at frame {frame_idx}: {reason}", flush=True)
+            self.active_guard_reason = reason_key
+            return True
+
+        if self.guard_cooldown > 0:
+            self.guard_cooldown -= 1
+            return True
+
+        if self.active_guard_reason is not None:
+            print(f"[GUARD] Detection resumed at frame {frame_idx}", flush=True)
+            self.active_guard_reason = None
+        return False
 
     def estimate_homography(self, src_gray: np.ndarray, dst_gray: np.ndarray) -> HomographyResult:
         orb_result = self._estimate_similarity_orb(src_gray, dst_gray)
@@ -1825,7 +1915,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
 
 
 
