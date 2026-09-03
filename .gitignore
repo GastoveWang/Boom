@@ -31,3 +31,10 @@ data/
 *.jpg
 *.jpeg
 *.png
+
+# Local model checkpoints
+/artillery/offline/model/
+
+# Local external resources
+/mod_ir_smoke/
+/wildfire-real-time-segmentation/
