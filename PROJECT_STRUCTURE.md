@@ -1,48 +1,46 @@
 # Project Structure
 
-This repository is now split by two dimensions:
-
-- `methods/`: whose detection method it is
-- `runtimes/`: where or how the method is executed
+Boom is organized first by runtime and then by implementation role.
 
 ## Current mapping
 
-- `methods/mine/`
-  - Roger's smoke/dust detector entrypoint and exports
-- `runtimes/offline/`
-  - offline detector runner
-  - impact-point pipeline runner
-  - review and labeling helper tools
-- `runtimes/online/`
-  - reserved for on-device or live execution entrypoints
-- `common/`
-  - shared interfaces and future common utilities
+- `artillery/offline/src/pipelines/`
+  - `pidnet_pipeline.py`: PIDNet-S algorithm entrypoint
+  - `optical_flow_pipeline.py`: traditional optical-flow algorithm entrypoint
+  - `shared_pipeline.py`: shared video I/O, UI, coordinates and event output
+- `artillery/offline/src/detectors/`
+  - `pidnet_smoke_detector.py`: semantic smoke segmentation and new-smoke tracking
+  - `optical_flow_smoke_detector.py`: frame differencing, motion compensation and optical-flow validation
+- `artillery/offline/src/pidnet_model/`
+  - bundled PIDNet architecture and its MIT license
+- `artillery/offline/model/`
+  - detector checkpoints
+- `artillery/online/`
+  - Jetson/Spinnaker real-time runtime
+- `wildfire-real-time-segmentation/`
+  - optional upstream PIDNet research and training repository; not required at runtime
+- `data/`
+  - input media
+- `output/offline/<video-name>_<method>/`
+  - each pipeline marks its method (`pidnet` or `optical_flow`) on the result folder name
 
-## Recommended pattern for adding other methods
+## Detector interface
 
-Add a new peer package under `methods/`:
-
-```text
-methods/
-  mine/
-  alice/
-  bob/
-```
-
-Each method package should expose a detector with the same runtime-facing API:
+Each detector should expose the same runtime-facing API:
 
 ```python
 process_frame(frame_bgr, frame_idx) -> np.ndarray
 consume_pending_confirmations() -> list
 ```
 
-Then reuse the same runtime runner, for example:
+This keeps detection algorithms separate from video, UI and coordinate handling.
 
-```text
-runtimes/offline/run_detector.py
-runtimes/online/
-```
+## Naming rules
 
-## Compatibility note
-
-Legacy source files are still kept under `mine/` so existing imports continue to work during the transition.
+- Python modules use lowercase `snake_case`.
+- Pipeline entrypoints identify the algorithm: `pidnet_pipeline.py` and
+  `optical_flow_pipeline.py`.
+- Detector names identify the implementation rather than using generic names
+  such as `smoke_dust_detector.py`.
+- Shared runtime logic belongs in `shared_pipeline.py`; it is not a third
+  detection algorithm.

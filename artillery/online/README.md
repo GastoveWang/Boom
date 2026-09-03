@@ -2,12 +2,12 @@
 
 Boom Online 是 Jetson 上的即時砲擊事件偵測程式。它使用
 FLIR／Teledyne SpinView 相機的 Spinnaker SDK（PySpin）取得畫面，
-偵測演算法則沿用專案原本的 `mine/offline/` detector。
+偵測演算法則沿用專案的 `artillery/offline/` detector。
 
 ## 專案結構
 
 ```text
-mine/online/
+artillery/online/
 ├── pyproject.toml
 ├── README.md
 ├── requirements-jetson.txt
@@ -29,8 +29,8 @@ mine/online/
 在 repository 根目錄執行：
 
 ```bash
-python3 -m pip install -r mine/online/requirements-jetson.txt
-python3 -m pip install -e mine/online
+python3 -m pip install -r artillery/online/requirements-jetson.txt
+python3 -m pip install -e artillery/online
 ```
 
 Jetson 優先使用 JetPack 內建的 OpenCV，不要用一般 pip wheel 覆蓋。
@@ -47,7 +47,7 @@ boom-online
 或者在 repository 根目錄執行：
 
 ```bash
-PYTHONPATH=mine/online/src python3 -m realtime_runner
+PYTHONPATH=artillery/online/src python3 -m realtime_runner
 ```
 
 指定相機：
@@ -76,7 +76,7 @@ boom-online --display
 每次啟動會依時間建立 session：
 
 ```text
-mine/online/output/YYYYMMDD_HHMMSS/
+artillery/online/output/YYYYMMDD_HHMMSS/
 ├── runtime.log
 ├── events.jsonl
 ├── detections.csv

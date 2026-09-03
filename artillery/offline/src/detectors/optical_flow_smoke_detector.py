@@ -23,6 +23,10 @@ class DetectorConfig:
     # Phase 1: preprocessing + ego-motion compensation.
     downscale: float = 0.5
     stride_frames: int = 5
+    # When set, use a time-normalized frame gap so 30/60 FPS sources have the
+    # same temporal baseline. ``stride_frames`` remains the compatibility
+    # fallback for existing callers.
+    diff_interval_sec: Optional[float] = None
     gaussian_blur_ksize: int = 5
 
     orb_features: int = 1500
@@ -49,13 +53,50 @@ class DetectorConfig:
     # Phase 2: strided frame differencing.
     diff_threshold: int = 40
     open_kernel_size: int = 3
-    close_kernel_size: int = 9
+    close_kernel_size: int = 7
     open_iterations: int = 1
-    close_iterations: int = 2
+    close_iterations: int = 1
     min_blob_area: float = 220.0
     max_blob_area_ratio: float = 0.35
     max_motion_ratio: float = 0.20
+    # A newly appearing dust/smoke patch normally changes local intensity in
+    # one dominant direction. Translation/parallax tends to create paired
+    # bright and dark edges and therefore a much lower polarity score.
+    min_residual_polarity_ratio: float = 0.68
+    min_residual_signed_coherence: float = 0.24
+    min_candidate_fill_ratio: float = 0.16
+    max_initial_motion_history_overlap: float = 0.45
+    # Small/distant impact branch.  Small blobs may enter tracking below the
+    # normal area threshold, but only when they are strong relative to their
+    # local noise and accumulate consistent temporal evidence.
+    small_min_blob_area: float = 4.0
+    small_diff_floor: float = 8.0
+    small_noise_window_size: int = 31
+    small_noise_sigma: float = 2.2
+    small_min_signal_to_noise: float = 2.2
+    small_min_polarity_ratio: float = 0.62
+    small_min_signed_coherence: float = 0.18
+    small_min_fill_ratio: float = 0.18
+    small_min_growth_ratio: float = 1.35
+    small_max_center_shift_ratio: float = 1.0
+    small_confirmation_hits_required: int = 3
+    small_confirmation_min_area_retention: float = 0.40
+    small_track_match_distance: float = 12.0
+    small_min_cumulative_signal: float = 700.0
+    small_edge_guard_ratio: float = 0.12
+    small_edge_min_fill_ratio: float = 0.40
+    motion_history_decay_sec: float = 2.0
+    motion_history_active_threshold: float = 0.20
+    motion_history_dilate_px: int = 7
+    # A bad perspective fit often produces many disconnected residual blobs
+    # spread across a 1440x1080 drone frame at once.  A real impact remains
+    # spatially local even when its dust cloud fragments into several blobs.
+    max_distributed_candidates: int = 8
+    min_candidate_field_span_ratio: float = 0.30
+    candidate_cluster_radius_ratio: float = 0.12
+    candidate_cluster_min_dominance: float = 0.45
     border_ignore_px: int = 12
+    border_ignore_ratio: float = 0.04
     feature_border_margin_px: int = 24
     valid_mask_erode_px: int = 10
     rotation_mask_expand_per_deg: float = 1.5
@@ -70,6 +111,10 @@ class DetectorConfig:
     min_expansion_balance: float = 0.55
     max_center_shift_ratio: float = 0.65
     strong_growth_override_ratio: float = 4.5
+    confirmation_hits_required: int = 2
+    confirmation_window_frames: int = 3
+    confirmation_min_area_retention: float = 0.75
+    confirmation_min_short_growth_ratio: float = 1.20
 
     enable_radial_flow_check: bool = True
     flow_min_blob_area: float = 180.0
@@ -96,6 +141,32 @@ class DetectorConfig:
     trajectory_match_distance: float = 140.0
     trajectory_extrapolation_scale: float = 2.0
     recent_confirmed_match_sec: float = 10.0
+    # A confirmed impact leaves a drifting dust/smoke plume.  Keep a separate
+    # spatio-temporal memory of that plume so its moving front is not emitted
+    # as a new impact every time the short-lived tracker expires.  The memory
+    # follows the latest plume position instead of freezing the original box,
+    # which still permits a spatially independent impact behind the plume.
+    post_event_memory_enabled: bool = True
+    post_event_memory_max_events: int = 12
+    post_event_memory_max_sec: float = 600.0
+    post_event_memory_idle_sec: float = 600.0
+    post_event_spatial_history_sec: float = 600.0
+    post_event_match_distance: float = 110.0
+    post_event_anchor_match_distance: float = 140.0
+    post_event_trajectory_distance: float = 80.0
+    post_event_follow_base_distance: float = 22.0
+    post_event_follow_speed_px_sec: float = 90.0
+    post_event_follow_max_distance: float = 140.0
+    post_event_follow_frontier_sec: float = 0.75
+    post_event_follow_max_branches: int = 5
+    post_event_bbox_margin_ratio: float = 0.65
+    post_event_min_bbox_margin_px: float = 18.0
+    post_event_max_bbox_margin_px: float = 60.0
+    post_event_retrigger_min_area: float = 70.0
+    post_event_retrigger_min_growth_ratio: float = 4.5
+    post_event_small_retrigger_min_area: float = 35.0
+    post_event_small_retrigger_growth_ratio: float = 8.0
+    post_event_small_retrigger_signal_scale: float = 4.0
 
     # Candidate splitting for nearby simultaneous bursts.
     enable_blob_splitting: bool = True
@@ -151,6 +222,15 @@ class BlobCandidate:
     area: float
     bbox: Tuple[int, int, int, int]
     centroid: Tuple[float, float]
+    residual_polarity_ratio: float = 0.0
+    residual_signed_coherence: float = 0.0
+    fill_ratio: float = 0.0
+    mean_abs_delta: float = 0.0
+    prior_motion_overlap: float = 0.0
+    local_noise: float = 1.0
+    signal_to_noise: float = 0.0
+    small_scale: bool = False
+    edge_risk: bool = False
     radial_flow: Optional[RadialFlowResult] = None
 
 
@@ -165,6 +245,15 @@ class EventTrack:
     confirm_frame: Optional[int] = None
     missed_frames: int = 0
     non_growth_frames: int = 0
+    confirmation_hits: int = 0
+    last_signature_frame: Optional[int] = None
+    initial_motion_overlap: float = 0.0
+    suppressed: bool = False
+    suppression_source_id: Optional[int] = None
+    small_scale: bool = False
+    observation_count: int = 0
+    cumulative_signal: float = 0.0
+    peak_growth: float = 1.0
     area_history: Deque[float] = field(
         default_factory=lambda: deque(maxlen=16))
     growth_history: Deque[float] = field(
@@ -199,6 +288,28 @@ class ConfirmedTrackSnapshot:
     last_seen_frame: int
     centroid_history: List[Tuple[float, float]]
     bbox_history: List[Tuple[int, int, int, int]]
+
+
+@dataclass
+class EventMemory:
+    """Recent spatio-temporal tube for one confirmed impact plume."""
+
+    event_id: int
+    confirm_frame: int
+    last_update_frame: int
+    centroid_history: Deque[Tuple[int, Tuple[float, float]]] = field(
+        default_factory=lambda: deque(maxlen=256)
+    )
+    bbox_history: Deque[Tuple[int, Tuple[int, int, int, int]]] = field(
+        default_factory=lambda: deque(maxlen=256)
+    )
+    # A verified plume observation and its frame provide a scene-aligned
+    # anchor.  When the drone translates or zooms, the anchor is projected
+    # into the current view before duplicate-event suppression is evaluated.
+    anchor_frame: Optional[int] = None
+    anchor_gray: Optional[np.ndarray] = None
+    anchor_centroid: Optional[Tuple[float, float]] = None
+    anchor_bbox: Optional[Tuple[int, int, int, int]] = None
 
 
 @dataclass
@@ -246,15 +357,22 @@ class InstantSmokeDustDetector:
             int(round(self.config.confirmed_box_hold_sec * self.fps)), 0)
         self.recent_confirmed_match_frames = max(
             int(round(self.config.recent_confirmed_match_sec * self.fps)), 1)
+        if self.config.diff_interval_sec is not None and self.config.diff_interval_sec > 0:
+            self.stride_frames = max(
+                int(round(self.config.diff_interval_sec * self.fps)), 1)
+        else:
+            self.stride_frames = max(int(self.config.stride_frames), 1)
         self.history: Deque[FrameBundle] = deque(
-            maxlen=max(self.config.stride_frames + 1, 2))
+            maxlen=max(self.stride_frames + 1, 2))
         self.tracks: Dict[int, EventTrack] = {}
         self.recent_confirmed_tracks: Deque[ConfirmedTrackSnapshot] = deque(maxlen=64)
+        self.event_memories: Dict[int, EventMemory] = {}
         self.pending_confirmations: List[ConfirmedEvent] = []
         self.next_event_id = 1
         self.guard_cooldown = 0
         self.active_guard_reason: Optional[str] = None
         self.guard_counts: Dict[str, int] = {}
+        self.motion_history: Optional[np.ndarray] = None
         self.orb = cv2.ORB_create(
             nfeatures=self.config.orb_features,
             scaleFactor=1.2,
@@ -271,7 +389,7 @@ class InstantSmokeDustDetector:
         vis = bundle.bgr.copy()
         zero_debug = np.zeros(bundle.gray.shape, dtype=np.uint8)
 
-        if len(self.history) <= self.config.stride_frames:
+        if len(self.history) <= self.stride_frames:
             self._expire_tracks_without_measurement(frame_idx)
             return self._draw_visualization(
                 vis,
@@ -285,6 +403,7 @@ class InstantSmokeDustDetector:
 
         current = self.history[-1]
         reference = self.history[0]
+        self._decay_motion_history(current.gray.shape)
 
         # Align T-N onto T so that most of the residual motion comes from the
         # event itself instead of the drone platform motion.
@@ -320,6 +439,8 @@ class InstantSmokeDustDetector:
                         current.gray, aligned_prev, candidates)
 
         self._update_tracks(candidates, frame_idx, measurement_ok)
+        if measurement_ok:
+            self._update_motion_history(motion_mask)
 
         return self._draw_visualization(
             vis,
@@ -338,6 +459,27 @@ class InstantSmokeDustDetector:
 
     def camera_guard_summary(self) -> Dict[str, int]:
         return dict(self.guard_counts)
+
+    def _decay_motion_history(self, shape: Tuple[int, int]) -> None:
+        if self.motion_history is None or self.motion_history.shape != shape:
+            self.motion_history = np.zeros(shape, dtype=np.float32)
+            return
+        decay_frames = max(self.config.motion_history_decay_sec * self.fps, 1.0)
+        self.motion_history *= float(np.exp(-1.0 / decay_frames))
+
+    def _update_motion_history(self, motion_mask: np.ndarray) -> None:
+        if self.motion_history is None or self.motion_history.shape != motion_mask.shape:
+            self.motion_history = np.zeros(motion_mask.shape, dtype=np.float32)
+        history_mask = motion_mask
+        dilate_k = _odd_ksize(self.config.motion_history_dilate_px)
+        if dilate_k > 1:
+            history_mask = cv2.dilate(
+                history_mask,
+                cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilate_k, dilate_k)),
+                iterations=1,
+            )
+        np.maximum(self.motion_history, history_mask.astype(np.float32) / 255.0,
+                   out=self.motion_history)
 
     def _build_frame_bundle(self, frame_bgr: np.ndarray, frame_idx: int) -> FrameBundle:
         if self.config.downscale != 1.0:
@@ -428,17 +570,21 @@ class InstantSmokeDustDetector:
         return False
 
     def estimate_homography(self, src_gray: np.ndarray, dst_gray: np.ndarray) -> HomographyResult:
-        orb_result = self._estimate_similarity_orb(src_gray, dst_gray)
-        if orb_result.ok:
-            return orb_result
-        lk_result = self._estimate_similarity_shi_tomasi(src_gray, dst_gray)
-        if lk_result.ok:
-            return lk_result
-
+        # The ground occupies most of these fixed 1440x1080 drone frames, so
+        # perspective change is significant even over a short frame interval.
+        # Prefer a projective model; the similarity transforms remain robust
+        # fallbacks for low-texture frames where a homography cannot be fit.
         orb_h_result = self._estimate_homography_orb(src_gray, dst_gray)
         if orb_h_result.ok:
             return orb_h_result
-        return self._estimate_homography_shi_tomasi(src_gray, dst_gray)
+        lk_h_result = self._estimate_homography_shi_tomasi(src_gray, dst_gray)
+        if lk_h_result.ok:
+            return lk_h_result
+
+        orb_result = self._estimate_similarity_orb(src_gray, dst_gray)
+        if orb_result.ok:
+            return orb_result
+        return self._estimate_similarity_shi_tomasi(src_gray, dst_gray)
 
     def _estimate_similarity_orb(self, src_gray: np.ndarray, dst_gray: np.ndarray) -> HomographyResult:
         feature_mask = self._build_feature_mask(src_gray.shape)
@@ -749,14 +895,19 @@ class InstantSmokeDustDetector:
         aligned_reference: np.ndarray,
         valid_mask: np.ndarray,
     ) -> Tuple[np.ndarray, np.ndarray, List[BlobCandidate], bool]:
+        signed_diff = current_gray.astype(np.int16) - aligned_reference.astype(np.int16)
         diff = cv2.absdiff(current_gray, aligned_reference)
         diff = cv2.bitwise_and(diff, valid_mask)
         _, motion_mask = cv2.threshold(
             diff, self.config.diff_threshold, 255, cv2.THRESH_BINARY)
         motion_mask = cv2.bitwise_and(motion_mask, valid_mask)
 
-        if self.config.border_ignore_px > 0:
-            b = self.config.border_ignore_px
+        b = max(
+            int(self.config.border_ignore_px),
+            int(np.ceil(min(motion_mask.shape) * self.config.border_ignore_ratio)),
+        )
+        b = min(b, max(min(motion_mask.shape) // 4, 0))
+        if b > 0:
             motion_mask[:b, :] = 0
             motion_mask[-b:, :] = 0
             motion_mask[:, :b] = 0
@@ -786,6 +937,35 @@ class InstantSmokeDustDetector:
             iterations=self.config.close_iterations,
         )
 
+        # A second, locally normalized branch preserves small distant onsets.
+        # It lowers the threshold only inside quiet image regions, so a weak
+        # impact can survive without globally admitting compression noise.
+        diff_float = diff.astype(np.float32)
+        noise_k = _odd_ksize(self.config.small_noise_window_size)
+        local_mean = cv2.boxFilter(
+            diff_float, cv2.CV_32F, (noise_k, noise_k), normalize=True
+        )
+        local_square_mean = cv2.boxFilter(
+            diff_float * diff_float,
+            cv2.CV_32F,
+            (noise_k, noise_k),
+            normalize=True,
+        )
+        local_std = np.sqrt(np.maximum(
+            local_square_mean - local_mean * local_mean, 0.0
+        ))
+        adaptive_threshold = np.maximum(
+            float(self.config.small_diff_floor),
+            local_mean + float(self.config.small_noise_sigma) * local_std,
+        )
+        small_mask = np.uint8(
+            (diff_float >= adaptive_threshold) & (valid_mask > 0)
+        ) * 255
+        small_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        small_mask = cv2.morphologyEx(
+            small_mask, cv2.MORPH_CLOSE, small_close, iterations=1
+        )
+
         frame_area = motion_mask.shape[0] * motion_mask.shape[1]
         valid_area = int(cv2.countNonZero(valid_mask))
         motion_ratio = float(cv2.countNonZero(
@@ -795,28 +975,199 @@ class InstantSmokeDustDetector:
             # a bad alignment estimate rather than a real explosion.
             return diff, motion_mask, [], False
 
-        contours = self._find_candidate_contours(motion_mask)
+        standard_contours = self._find_candidate_contours(motion_mask)
+        small_contours, _ = cv2.findContours(
+            small_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        standard_boxes = [cv2.boundingRect(contour) for contour in standard_contours]
+        contour_entries: List[Tuple[np.ndarray, bool]] = [
+            (contour, False) for contour in standard_contours
+        ]
+        for contour in small_contours:
+            small_box = cv2.boundingRect(contour)
+            if any(_bboxes_overlap(small_box, box) for box in standard_boxes):
+                continue
+            contour_entries.append((contour, True))
         candidates: List[BlobCandidate] = []
 
-        for contour in contours:
+        for contour, from_small_branch in contour_entries:
             area = float(cv2.contourArea(contour))
-            if area < self.config.min_blob_area:
+            min_area = (
+                self.config.small_min_blob_area
+                if from_small_branch
+                else self.config.min_blob_area
+            )
+            if area < min_area:
                 continue
             if area > self.config.max_blob_area_ratio * frame_area:
                 continue
 
             x, y, w, h = cv2.boundingRect(contour)
+            if (
+                x <= b
+                or y <= b
+                or x + w >= motion_mask.shape[1] - b
+                or y + h >= motion_mask.shape[0] - b
+            ):
+                continue
             centroid = _contour_centroid(contour, (x + w / 2.0, y + h / 2.0))
+            contour_mask = np.zeros((h, w), dtype=np.uint8)
+            shifted_contour = contour.copy().astype(np.int32)
+            shifted_contour[:, 0, 0] -= x
+            shifted_contour[:, 0, 1] -= y
+            cv2.drawContours(contour_mask, [shifted_contour], -1, 255, thickness=-1)
+
+            roi_signed = signed_diff[y: y + h, x: x + w]
+            roi_diff = diff[y: y + h, x: x + w]
+            active = (
+                (contour_mask > 0)
+                & (
+                    roi_diff
+                    >= (
+                        self.config.small_diff_floor
+                        if from_small_branch
+                        else self.config.diff_threshold
+                    )
+                )
+            )
+            values = roi_signed[active]
+            if values.size:
+                positive = int(np.count_nonzero(values > 0))
+                negative = int(np.count_nonzero(values < 0))
+                changed = max(positive + negative, 1)
+                residual_polarity_ratio = max(positive, negative) / changed
+                abs_values = np.abs(values.astype(np.float32))
+                residual_signed_coherence = float(
+                    abs(float(np.sum(values))) / max(float(np.sum(abs_values)), 1e-6)
+                )
+                mean_abs_delta = float(np.mean(abs_values))
+            else:
+                residual_polarity_ratio = 0.0
+                residual_signed_coherence = 0.0
+                mean_abs_delta = 0.0
+            fill_ratio = float(area / max(w * h, 1))
+            edge_guard = int(np.ceil(
+                min(motion_mask.shape) * self.config.small_edge_guard_ratio
+            ))
+            edge_risk = (
+                x <= edge_guard
+                or y <= edge_guard
+                or x + w >= motion_mask.shape[1] - edge_guard
+                or y + h >= motion_mask.shape[0] - edge_guard
+            )
+            padding = max(max(w, h), 8)
+            x0 = max(x - padding, 0)
+            y0 = max(y - padding, 0)
+            x1 = min(x + w + padding, diff.shape[1])
+            y1 = min(y + h + padding, diff.shape[0])
+            context = diff[y0:y1, x0:x1]
+            context_valid = valid_mask[y0:y1, x0:x1] > 0
+            context_values = context[context_valid]
+            local_noise = float(np.percentile(context_values, 75)) \
+                if context_values.size else 1.0
+            local_noise = max(local_noise, 1.0)
+            signal_to_noise = mean_abs_delta / local_noise
+            small_scale = from_small_branch
+
+            if from_small_branch and (
+                signal_to_noise < self.config.small_min_signal_to_noise
+                or residual_polarity_ratio < self.config.small_min_polarity_ratio
+                or residual_signed_coherence
+                < self.config.small_min_signed_coherence
+                or fill_ratio < self.config.small_min_fill_ratio
+            ):
+                continue
+
+            prior_motion_overlap = 0.0
+            if self.motion_history is not None:
+                history_values = self.motion_history[y: y + h, x: x + w][
+                    contour_mask > 0
+                ]
+                if history_values.size:
+                    prior_motion_overlap = float(np.mean(
+                        history_values >= self.config.motion_history_active_threshold
+                    ))
             candidates.append(
                 BlobCandidate(
                     contour=contour,
                     area=area,
                     bbox=(x, y, w, h),
                     centroid=centroid,
+                    residual_polarity_ratio=float(residual_polarity_ratio),
+                    residual_signed_coherence=residual_signed_coherence,
+                    fill_ratio=fill_ratio,
+                    mean_abs_delta=mean_abs_delta,
+                    prior_motion_overlap=prior_motion_overlap,
+                    local_noise=local_noise,
+                    signal_to_noise=signal_to_noise,
+                    small_scale=small_scale,
+                    edge_risk=edge_risk,
                 )
             )
 
+        candidates, field_ok = self._filter_distributed_candidate_field(
+            candidates, motion_mask.shape
+        )
+        if not field_ok:
+            return diff, motion_mask, [], False
+
         return diff, motion_mask, candidates, True
+
+    def _filter_distributed_candidate_field(
+        self,
+        candidates: List[BlobCandidate],
+        shape: Tuple[int, int],
+    ) -> Tuple[List[BlobCandidate], bool]:
+        if len(candidates) < max(self.config.max_distributed_candidates, 1):
+            return candidates, True
+
+        height, width = shape
+        xs = [candidate.centroid[0] for candidate in candidates]
+        ys = [candidate.centroid[1] for candidate in candidates]
+        x_span_ratio = (max(xs) - min(xs)) / max(width, 1)
+        y_span_ratio = (max(ys) - min(ys)) / max(height, 1)
+        min_span = max(self.config.min_candidate_field_span_ratio, 0.0)
+        if x_span_ratio < min_span and y_span_ratio < min_span:
+            return candidates, True
+
+        radius = max(
+            min(height, width) * self.config.candidate_cluster_radius_ratio,
+            1.0,
+        )
+        weights = np.asarray([
+            candidate.area * max(
+                candidate.mean_abs_delta - candidate.local_noise, 1.0
+            )
+            for candidate in candidates
+        ], dtype=np.float32)
+        total_weight = max(float(np.sum(weights)), 1e-6)
+
+        best_index = 0
+        best_cluster_indices: List[int] = []
+        best_weight = 0.0
+        for center_index, center in enumerate(candidates):
+            cluster_indices = [
+                index
+                for index, candidate in enumerate(candidates)
+                if _euclidean(center.centroid, candidate.centroid) <= radius
+            ]
+            cluster_weight = float(np.sum(weights[cluster_indices]))
+            if cluster_weight > best_weight:
+                best_index = center_index
+                best_cluster_indices = cluster_indices
+                best_weight = cluster_weight
+
+        dominance = best_weight / total_weight
+        if dominance < self.config.candidate_cluster_min_dominance:
+            return [], False
+
+        dominant_center = candidates[best_index].centroid
+        kept = [
+            candidate
+            for candidate in candidates
+            if _euclidean(dominant_center, candidate.centroid) <= radius * 1.5
+        ]
+        return kept, True
 
     def _find_candidate_contours(self, motion_mask: np.ndarray) -> List[np.ndarray]:
         contours, _ = cv2.findContours(
@@ -1001,10 +1352,12 @@ class InstantSmokeDustDetector:
         frame_idx: int,
         measurement_ok: bool,
     ) -> None:
+        self._prune_event_memories(frame_idx)
         if not measurement_ok:
             self._expire_tracks_without_measurement(frame_idx)
             return
 
+        self._follow_event_memories(candidates, frame_idx)
         matches, unmatched_track_ids, unmatched_candidate_ids = self._match_tracks(
             candidates)
 
@@ -1062,6 +1415,17 @@ class InstantSmokeDustDetector:
         if _bboxes_overlap(track.bbox, candidate.bbox):
             return dist * 0.25
 
+        # Do not let a tiny tentative residual steal a newly appearing large
+        # plume simply because both fall inside the legacy 200 px association
+        # radius.  Genuine scale growth normally keeps the boxes overlapping;
+        # without overlap, a small track may only move a short distance.
+        if (
+            track.small_scale
+            and track.current_area < self.config.min_confirm_area
+            and dist > self.config.small_track_match_distance
+        ):
+            return None
+
         if dist <= self.config.track_match_distance:
             return dist
 
@@ -1110,6 +1474,13 @@ class InstantSmokeDustDetector:
             last_seen_frame=frame_idx,
             centroid=candidate.centroid,
             bbox=candidate.bbox,
+            initial_motion_overlap=candidate.prior_motion_overlap,
+            small_scale=candidate.small_scale,
+            observation_count=1,
+            cumulative_signal=(
+                candidate.area
+                * max(candidate.mean_abs_delta - candidate.local_noise, 0.0)
+            ),
         )
         track.area_history.append(candidate.area)
         track.centroid_history.append(candidate.centroid)
@@ -1141,6 +1512,13 @@ class InstantSmokeDustDetector:
             track.radial_history.append(radial_ratio)
 
         effective_growth = max(instant_growth, short_growth)
+        track.observation_count += 1
+        track.small_scale = track.small_scale or candidate.small_scale
+        track.cumulative_signal += (
+            candidate.area
+            * max(candidate.mean_abs_delta - candidate.local_noise, 0.0)
+        )
+        track.peak_growth = max(track.peak_growth, effective_growth)
         expansion_pass, expansion_metrics = self._check_expansion_motion(
             prev_bbox, candidate.bbox, prev_centroid, candidate.centroid)
         if effective_growth < self.config.stop_growth_ratio:
@@ -1151,6 +1529,8 @@ class InstantSmokeDustDetector:
             track.non_growth_frames = 0
 
         if not track.confirmed:
+            if track.suppressed:
+                return
             radial_pass = False
             if (
                 candidate.radial_flow is not None
@@ -1163,19 +1543,149 @@ class InstantSmokeDustDetector:
                 effective_growth >= self.config.strong_growth_override_ratio
                 and expansion_metrics["center_shift_ratio"] <= self.config.max_center_shift_ratio
             )
+            appearance_pass = (
+                candidate.residual_polarity_ratio >= self.config.min_residual_polarity_ratio
+                and candidate.residual_signed_coherence
+                >= self.config.min_residual_signed_coherence
+                and candidate.fill_ratio >= self.config.min_candidate_fill_ratio
+            )
+            small_appearance_pass = (
+                candidate.signal_to_noise
+                >= self.config.small_min_signal_to_noise
+                and candidate.residual_polarity_ratio
+                >= self.config.small_min_polarity_ratio
+                and candidate.residual_signed_coherence
+                >= self.config.small_min_signed_coherence
+                and candidate.fill_ratio >= self.config.small_min_fill_ratio
+            )
             motion_signature_pass = expansion_pass or radial_pass or strong_growth_override
-
-            if (
+            onset_pass = (
                 candidate.area >= self.config.min_confirm_area
                 and effective_growth >= self.config.min_growth_ratio
+                and appearance_pass
                 and motion_signature_pass
+                and track.initial_motion_overlap
+                <= self.config.max_initial_motion_history_overlap
+            )
+            continuation_pass = (
+                track.confirmation_hits > 0
+                and track.last_signature_frame is not None
+                and frame_idx - track.last_signature_frame
+                <= self.config.confirmation_window_frames
+                and candidate.area
+                >= prev_area * self.config.confirmation_min_area_retention
+                and short_growth
+                >= self.config.confirmation_min_short_growth_ratio
+                and appearance_pass
+                and expansion_metrics["center_shift_ratio"]
+                <= self.config.max_center_shift_ratio
+            )
+            small_motion_signature_pass = (
+                expansion_pass
+                or radial_pass
+                or effective_growth >= self.config.small_min_growth_ratio
+                or track.peak_growth >= self.config.small_min_growth_ratio
+            )
+            small_onset_pass = (
+                track.small_scale
+                and candidate.area >= self.config.small_min_blob_area
+                and effective_growth >= self.config.small_min_growth_ratio
+                and small_appearance_pass
+                and small_motion_signature_pass
+                and expansion_metrics["center_shift_ratio"]
+                <= self.config.small_max_center_shift_ratio
+                and track.initial_motion_overlap
+                <= self.config.max_initial_motion_history_overlap
+            )
+            small_continuation_pass = (
+                track.small_scale
+                and track.confirmation_hits > 0
+                and track.last_signature_frame is not None
+                and frame_idx - track.last_signature_frame
+                <= self.config.confirmation_window_frames
+                and candidate.area
+                >= prev_area * self.config.small_confirmation_min_area_retention
+                and small_appearance_pass
+                and expansion_metrics["center_shift_ratio"]
+                <= self.config.small_max_center_shift_ratio
+            )
+
+            if (
+                onset_pass
+                or continuation_pass
+                or small_onset_pass
+                or small_continuation_pass
             ):
-                if self._matches_recent_confirmed_event(track, candidate, frame_idx):
+                if (
+                    track.last_signature_frame is None
+                    or frame_idx - track.last_signature_frame
+                    > self.config.confirmation_window_frames
+                ):
+                    track.confirmation_hits = 1
+                else:
+                    track.confirmation_hits += 1
+                track.last_signature_frame = frame_idx
+            elif (
+                track.last_signature_frame is not None
+                and frame_idx - track.last_signature_frame
+                > self.config.confirmation_window_frames
+            ):
+                track.confirmation_hits = 0
+                track.last_signature_frame = None
+
+            edge_small_shape_pass = (
+                not (track.small_scale and candidate.edge_risk)
+                or candidate.fill_ratio >= self.config.small_edge_min_fill_ratio
+            )
+            normal_evidence_ready = (
+                candidate.area >= self.config.min_confirm_area
+                and edge_small_shape_pass
+            )
+            small_evidence_ready = (
+                track.small_scale
+                and track.cumulative_signal
+                >= self.config.small_min_cumulative_signal
+                and track.peak_growth >= self.config.small_min_growth_ratio
+                and edge_small_shape_pass
+            )
+            required_hits = (
+                self.config.confirmation_hits_required
+                if normal_evidence_ready
+                else self.config.small_confirmation_hits_required
+            )
+            if (
+                track.confirmation_hits >= max(required_hits, 1)
+                and (normal_evidence_ready or small_evidence_ready)
+            ):
+                suppression_source_id = self._matches_recent_confirmed_event(
+                    track, candidate, frame_idx
+                )
+                if suppression_source_id is not None:
+                    track.suppressed = True
+                    track.suppression_source_id = suppression_source_id
+                    track.confirmation_hits = 0
+                    # Feed only fully verified duplicate proposals back into
+                    # the long-term tube.  This bridges intermittent plume
+                    # observations without letting every raw residual expand
+                    # the exclusion region.
+                    self._remember_event_observation(
+                        suppression_source_id,
+                        candidate,
+                        frame_idx,
+                        update_anchor=True,
+                    )
                     return
                 # The event ID is only surfaced after the blob demonstrates a
                 # burst-like growth signature.
                 track.confirmed = True
                 track.confirm_frame = frame_idx
+                self._remember_event_observation(
+                    track.event_id,
+                    candidate,
+                    frame_idx,
+                    frame_idx,
+                    update_anchor=True,
+                )
                 self.pending_confirmations.append(
                     ConfirmedEvent(
                         event_id=track.event_id,
@@ -1196,12 +1706,267 @@ class InstantSmokeDustDetector:
                     f"shift={expansion_metrics['center_shift_ratio']:.2f}"
                 )
 
+    def _follow_event_memories(
+        self,
+        candidates: List[BlobCandidate],
+        frame_idx: int,
+    ) -> None:
+        """Advance each plume tube with a bounded set of connected branches."""
+        if not self.config.post_event_memory_enabled or not candidates:
+            return
+
+        used_candidates = set()
+        ordered_memories = sorted(
+            self.event_memories.values(),
+            key=lambda memory: memory.last_update_frame,
+            reverse=True,
+        )
+        for memory in ordered_memories:
+            if not memory.centroid_history:
+                continue
+            frontier_frames = max(
+                int(round(self.config.post_event_follow_frontier_sec * self.fps)),
+                1,
+            )
+            frontier_min_frame = memory.last_update_frame - frontier_frames
+            frontier = [
+                (observed_frame, centroid)
+                for observed_frame, centroid in memory.centroid_history
+                if observed_frame >= frontier_min_frame
+            ]
+            if not frontier:
+                frontier = [memory.centroid_history[-1]]
+
+            options: List[Tuple[float, int]] = []
+            for candidate_id, candidate in enumerate(candidates):
+                if candidate_id in used_candidates:
+                    continue
+                best_distance = float("inf")
+                for observed_frame, centroid in frontier:
+                    elapsed_sec = max(
+                        (frame_idx - observed_frame) / self.fps,
+                        1.0 / self.fps,
+                    )
+                    follow_distance = min(
+                        self.config.post_event_follow_base_distance
+                        + self.config.post_event_follow_speed_px_sec * elapsed_sec,
+                        self.config.post_event_follow_max_distance,
+                    )
+                    distance = _euclidean(centroid, candidate.centroid)
+                    if distance <= follow_distance:
+                        best_distance = min(best_distance, distance)
+                if not np.isfinite(best_distance):
+                    continue
+                # Favor coherent, substantial plume pieces.  Distance remains
+                # dominant so isolated large objects cannot hijack the tube.
+                score = best_distance - min(
+                    np.sqrt(max(candidate.area, 0.0)), 25.0
+                ) * 0.30
+                options.append((float(score), candidate_id))
+
+            if not options:
+                continue
+            max_branches = max(self.config.post_event_follow_max_branches, 1)
+            for _, candidate_id in sorted(options)[:max_branches]:
+                used_candidates.add(candidate_id)
+                self._remember_event_observation(
+                    memory.event_id,
+                    candidates[candidate_id],
+                    frame_idx,
+                )
+
+    def _remember_event_observation(
+        self,
+        event_id: int,
+        candidate: BlobCandidate,
+        frame_idx: int,
+        confirm_frame: Optional[int] = None,
+        update_anchor: bool = False,
+    ) -> None:
+        if not self.config.post_event_memory_enabled:
+            return
+
+        memory = self.event_memories.get(event_id)
+        if memory is None:
+            if confirm_frame is None:
+                return
+            max_memories = max(self.config.post_event_memory_max_events, 1)
+            if len(self.event_memories) >= max_memories:
+                oldest_event_id = min(
+                    self.event_memories,
+                    key=lambda key: (
+                        self.event_memories[key].last_update_frame,
+                        self.event_memories[key].confirm_frame,
+                    ),
+                )
+                self.event_memories.pop(oldest_event_id, None)
+            memory = EventMemory(
+                event_id=event_id,
+                confirm_frame=confirm_frame,
+                last_update_frame=frame_idx,
+            )
+            self.event_memories[event_id] = memory
+
+        memory.last_update_frame = frame_idx
+        memory.centroid_history.append((frame_idx, candidate.centroid))
+        memory.bbox_history.append((frame_idx, candidate.bbox))
+        if update_anchor and self.history:
+            current_gray = self.history[-1].gray
+            memory.anchor_frame = frame_idx
+            memory.anchor_gray = current_gray.copy()
+            memory.anchor_centroid = candidate.centroid
+            memory.anchor_bbox = candidate.bbox
+
+    def _prune_event_memories(self, frame_idx: int) -> None:
+        if not self.event_memories:
+            return
+
+        max_age_frames = max(
+            int(round(self.config.post_event_memory_max_sec * self.fps)), 1
+        )
+        idle_frames = max(
+            int(round(self.config.post_event_memory_idle_sec * self.fps)), 1
+        )
+        expired = [
+            event_id
+            for event_id, memory in self.event_memories.items()
+            if frame_idx - memory.confirm_frame > max_age_frames
+            or frame_idx - memory.last_update_frame > idle_frames
+        ]
+        for event_id in expired:
+            self.event_memories.pop(event_id, None)
+
+    def _event_memory_matches(
+        self,
+        memory: EventMemory,
+        candidate: BlobCandidate,
+        frame_idx: int,
+    ) -> bool:
+        max_age_frames = max(
+            int(round(self.config.post_event_memory_max_sec * self.fps)), 1
+        )
+        idle_frames = max(
+            int(round(self.config.post_event_memory_idle_sec * self.fps)), 1
+        )
+        if (
+            frame_idx - memory.confirm_frame > max_age_frames
+            or frame_idx - memory.last_update_frame > idle_frames
+        ):
+            return False
+
+        spatial_history_frames = max(
+            int(round(self.config.post_event_spatial_history_sec * self.fps)), 1
+        )
+        min_frame = frame_idx - spatial_history_frames
+        recent_boxes = [
+            bbox for observed_frame, bbox in memory.bbox_history
+            if observed_frame >= min_frame
+        ]
+        recent_centroids = [
+            centroid for observed_frame, centroid in memory.centroid_history
+            if observed_frame >= min_frame
+        ]
+        if not recent_boxes or not recent_centroids:
+            return False
+
+        for recent_box in recent_boxes:
+            margin = float(np.clip(
+                max(recent_box[2], recent_box[3])
+                * self.config.post_event_bbox_margin_ratio,
+                self.config.post_event_min_bbox_margin_px,
+                self.config.post_event_max_bbox_margin_px,
+            ))
+            if _bboxes_overlap(_expand_bbox(recent_box, margin), candidate.bbox):
+                return True
+
+        nearest_distance = min(
+            _euclidean(centroid, candidate.centroid)
+            for centroid in recent_centroids
+        )
+        if nearest_distance <= self.config.post_event_match_distance:
+            return True
+        return self._event_anchor_matches(memory, candidate)
+
+    def _event_anchor_matches(
+        self,
+        memory: EventMemory,
+        candidate: BlobCandidate,
+    ) -> bool:
+        """Match a plume after compensating long-baseline drone motion."""
+        if (
+            memory.anchor_gray is None
+            or memory.anchor_centroid is None
+            or memory.anchor_bbox is None
+            or not self.history
+        ):
+            return False
+
+        current_gray = self.history[-1].gray
+        if memory.anchor_gray.shape != current_gray.shape:
+            return False
+        align_result = self.estimate_homography(memory.anchor_gray, current_gray)
+        if not align_result.ok or align_result.H is None:
+            return False
+
+        H = np.asarray(align_result.H, dtype=np.float32)
+        centroid = np.asarray(
+            [[[memory.anchor_centroid[0], memory.anchor_centroid[1]]]],
+            dtype=np.float32,
+        )
+        projected_centroid = cv2.perspectiveTransform(centroid, H)[0, 0]
+
+        x, y, w, h = memory.anchor_bbox
+        corners = np.asarray(
+            [[[x, y], [x + w, y], [x + w, y + h], [x, y + h]]],
+            dtype=np.float32,
+        )
+        projected_corners = cv2.perspectiveTransform(corners, H)[0]
+        if (
+            not np.all(np.isfinite(projected_centroid))
+            or not np.all(np.isfinite(projected_corners))
+        ):
+            return False
+
+        min_xy = np.min(projected_corners, axis=0)
+        max_xy = np.max(projected_corners, axis=0)
+        projected_bbox = (
+            int(round(float(min_xy[0]))),
+            int(round(float(min_xy[1]))),
+            max(int(round(float(max_xy[0] - min_xy[0]))), 1),
+            max(int(round(float(max_xy[1] - min_xy[1]))), 1),
+        )
+        margin = float(np.clip(
+            max(projected_bbox[2], projected_bbox[3])
+            * self.config.post_event_bbox_margin_ratio,
+            self.config.post_event_min_bbox_margin_px,
+            self.config.post_event_max_bbox_margin_px,
+        ))
+        if _bboxes_overlap(_expand_bbox(projected_bbox, margin), candidate.bbox):
+            return True
+        return _euclidean(
+            (float(projected_centroid[0]), float(projected_centroid[1])),
+            candidate.centroid,
+        ) <= self.config.post_event_anchor_match_distance
+
     def _matches_recent_confirmed_event(
         self,
         track: EventTrack,
         candidate: BlobCandidate,
         frame_idx: int,
-    ) -> bool:
+    ) -> Optional[int]:
+        if self.config.post_event_memory_enabled:
+            for memory in self.event_memories.values():
+                if memory.event_id == track.event_id:
+                    continue
+                if self._event_memory_matches(memory, candidate, frame_idx):
+                    return memory.event_id
+
+        # Strong change-point evidence may bypass the short legacy tracker,
+        # but never a scene-aligned plume match.  Mature smoke can exhibit a
+        # large apparent growth when the drone changes viewpoint.
+        if self._is_independent_post_event_retrigger(track, candidate):
+            return None
+
         for other in self.tracks.values():
             if not other.confirmed or other.confirm_frame is None or other.event_id == track.event_id:
                 continue
@@ -1213,7 +1978,7 @@ class InstantSmokeDustDetector:
                 list(other.centroid_history),
                 candidate,
             ):
-                return True
+                return other.event_id
 
         for snapshot in self.recent_confirmed_tracks:
             if snapshot.event_id == track.event_id:
@@ -1226,8 +1991,31 @@ class InstantSmokeDustDetector:
                 snapshot.centroid_history,
                 candidate,
             ):
-                return True
-        return False
+                return snapshot.event_id
+        return None
+
+    def _is_independent_post_event_retrigger(
+        self,
+        track: EventTrack,
+        candidate: BlobCandidate,
+    ) -> bool:
+        normal_retrigger = (
+            candidate.area >= self.config.post_event_retrigger_min_area
+            and track.peak_growth
+            >= self.config.post_event_retrigger_min_growth_ratio
+        )
+        small_retrigger = (
+            track.small_scale
+            and candidate.area >= self.config.post_event_small_retrigger_min_area
+            and track.peak_growth
+            >= self.config.post_event_small_retrigger_growth_ratio
+            and track.cumulative_signal
+            >= self.config.small_min_cumulative_signal
+            * self.config.post_event_small_retrigger_signal_scale
+            and track.initial_motion_overlap
+            <= self.config.max_initial_motion_history_overlap
+        )
+        return normal_retrigger or small_retrigger
 
     def _is_duplicate_confirmation(
         self,
@@ -1474,6 +2262,14 @@ def _bboxes_overlap(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) 
     bx1 = bx0 + bw
     by1 = by0 + bh
     return min(ax1, bx1) > max(ax0, bx0) and min(ay1, by1) > max(ay0, by0)
+
+
+def _expand_bbox(
+    bbox: Tuple[int, int, int, int], margin: float
+) -> Tuple[int, int, int, int]:
+    x, y, w, h = bbox
+    pad = max(int(round(margin)), 0)
+    return x - pad, y - pad, w + 2 * pad, h + 2 * pad
 
 
 def _point_to_segment_distance(

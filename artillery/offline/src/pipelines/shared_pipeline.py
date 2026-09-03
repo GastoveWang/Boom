@@ -13,16 +13,22 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from PIL.ExifTags import GPSTAGS
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from mine.offline.smoke_dust_detector import DetectorConfig, InstantSmokeDustDetector
-
+from artillery.offline.src.detectors import (  # noqa: E402
+    PIDNetSmokeImpactDetector,
+    PIDNetSmokeTrackerConfig,
+)
+from artillery.offline.src.detectors.optical_flow_smoke_detector import (  # noqa: E402
+    DetectorConfig,
+    InstantSmokeDustDetector,
+)
 
 IMAGE_PATH: Optional[str] = None
 VIDEO_PATH: Optional[str] = None
-OUTPUT_ROOT = str(PROJECT_ROOT / "output" / "offline")
+OUTPUT_ROOT = PROJECT_ROOT / "output" / "offline"
 
 UI_MODE = "client"
 DISPLAY_SCALE = 0.5
@@ -43,15 +49,43 @@ UI_FONT_PATHS = [
 
 DOWNSCALE = 0.7
 STRIDE_FRAMES = 2
-DIFF_THRESHOLD = 25
-MIN_BLOB_AREA = 30.0
-MIN_GROWTH_RATIO = 1.2
+DIFF_INTERVAL_SEC = 0.12
+DIFF_THRESHOLD = 18
+MIN_BLOB_AREA = 15.0
+MIN_CONFIRM_AREA = 35.0
+MIN_GROWTH_RATIO = 1.3
+OPEN_KERNEL_SIZE = 3
+CLOSE_KERNEL_SIZE = 7
+CLOSE_ITERATIONS = 1
+MIN_RESIDUAL_POLARITY_RATIO = 0.60
+MIN_RESIDUAL_SIGNED_COHERENCE = 0.24
+MIN_CANDIDATE_FILL_RATIO = 0.16
+MAX_INITIAL_MOTION_HISTORY_OVERLAP = 0.55
+SMALL_MIN_BLOB_AREA = 4.0
+SMALL_DIFF_FLOOR = 8.0
+SMALL_NOISE_WINDOW_SIZE = 31
+SMALL_NOISE_SIGMA = 2.2
+SMALL_MIN_SIGNAL_TO_NOISE = 2.2
+SMALL_MIN_GROWTH_RATIO = 1.35
+SMALL_MAX_CENTER_SHIFT_RATIO = 1.0
+SMALL_CONFIRMATION_HITS_REQUIRED = 3
+SMALL_MIN_CUMULATIVE_SIGNAL = 700.0
+MAX_DISTRIBUTED_CANDIDATES = 8
+MIN_CANDIDATE_FIELD_SPAN_RATIO = 0.30
+CONFIRMATION_HITS_REQUIRED = 2
 STOP_GROWTH_RATIO = 1.08
 MAX_EVENT_AGE_SEC = 3.0
 CONFIRMED_BOX_HOLD_SEC = 1.5
 TRACK_MATCH_DISTANCE = 200.0
 TRAJECTORY_MATCH_DISTANCE = 270.0
 RECENT_CONFIRMED_MATCH_SEC = 10.0
+POST_EVENT_MEMORY_MAX_SEC = 600.0
+POST_EVENT_MEMORY_IDLE_SEC = 600.0
+POST_EVENT_SPATIAL_HISTORY_SEC = 600.0
+POST_EVENT_MATCH_DISTANCE = 110.0
+POST_EVENT_TRAJECTORY_DISTANCE = 80.0
+POST_EVENT_RETRIGGER_MIN_AREA = 70.0
+POST_EVENT_RETRIGGER_MIN_GROWTH_RATIO = 4.5
 MAX_MISSED_FRAMES = 6
 MIN_DIMENSION_GROWTH_RATIO = 1.08
 MAX_CENTER_SHIFT_RATIO = 0.65
@@ -59,6 +93,20 @@ SPLIT_BLOB_AREA = 2500.0
 ENABLE_RADIAL_FLOW_CHECK = True
 DRAW_DEBUG_TILES = False
 SHOW_CANDIDATE_BOXES = True
+
+# PIDNet-S semantic smoke segmentation + new-smoke tracking.  The first second
+# is the only interval in which a newly created track may become an impact event.
+DETECTOR_BACKEND = "pidnet"
+PIDNET_MODEL_PATH = PROJECT_ROOT / "artillery" / "offline" / "model" / "sam_sup_pidnet_s.pt"
+PIDNET_DEVICE = "auto"
+PIDNET_INPUT_WIDTH = 960
+PIDNET_INPUT_HEIGHT = 544
+PIDNET_THRESHOLD = 0.80
+PIDNET_MIN_COMPONENT_AREA = 30
+PIDNET_WARMUP_SEC = 0.50
+NEW_SMOKE_WINDOW_SEC = 1.0
+PIDNET_CONFIRMATION_HITS = 2
+PIDNET_MIN_CONFIRMATION_CONFIDENCE = 0.72
 
 
 DRONE_LON = None
@@ -89,6 +137,10 @@ class LoggedEvent:
     northing: float
     lon: float
     lat: float
+    confidence: float
+    impact_point: Tuple[float, float]
+    confirmed_frame_idx: int
+    confirmation_delay_sec: float
 
 
 def _get_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -122,11 +174,21 @@ def draw_confirmed_event_overlays(frame: np.ndarray, active_events: List[LoggedE
         cv2.rectangle(canvas, (x, y), (x + w, y + h), (0, 0, 255), 2)
         cv2.putText(
             canvas,
-            f"EVENT {event.event_id}",
+            f"IMPACT {event.event_id}  NEW  {event.confidence:.2f}",
             (x, max(24, y - 10)),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.72,
             (0, 0, 255),
+            2,
+            cv2.LINE_AA,
+        )
+        impact_x, impact_y = (int(round(v)) for v in event.impact_point)
+        cv2.drawMarker(
+            canvas,
+            (impact_x, impact_y),
+            (0, 0, 255),
+            cv2.MARKER_CROSS,
+            22,
             2,
             cv2.LINE_AA,
         )
@@ -246,19 +308,47 @@ def _default_video_path() -> Optional[Path]:
     return None
 
 
-def build_arg_parser() -> argparse.ArgumentParser:
+def build_arg_parser(
+    default_detector: str = DETECTOR_BACKEND,
+    *,
+    allow_detector_selection: bool = True,
+) -> argparse.ArgumentParser:
+    algorithm_name = "PIDNet-S" if default_detector == "pidnet" else "optical flow"
     parser = argparse.ArgumentParser(
-        description="Offline smoke/dust detection with Terminal progress."
+        description=f"Offline artillery-impact detection using {algorithm_name}."
     )
     parser.add_argument("--video", type=Path,
                         help="Input video; defaults to the first video under data/.")
     parser.add_argument("--reference-image", type=Path,
                         help="Optional DJI image containing GPS/XMP metadata.")
-    parser.add_argument("--output-dir", type=Path, default=Path(OUTPUT_ROOT))
     parser.add_argument("--start-frame", type=int, default=START_FRAME)
     parser.add_argument("--max-frames", type=int, default=MAX_FRAMES)
     parser.add_argument("--report-every", type=int, default=60,
                         help="Print progress every N frames (default: 60).")
+    if allow_detector_selection:
+        parser.add_argument(
+            "--detector",
+            choices=("pidnet", "motion"),
+            default=default_detector,
+            help="Select PIDNet-S or traditional optical-flow detection.",
+        )
+    else:
+        parser.set_defaults(detector=default_detector)
+    if allow_detector_selection or default_detector == "pidnet":
+        parser.add_argument("--model-path", type=Path, default=PIDNET_MODEL_PATH)
+        parser.add_argument(
+            "--device", choices=("auto", "cpu", "cuda"), default=PIDNET_DEVICE
+        )
+        parser.add_argument("--seg-threshold", type=float, default=PIDNET_THRESHOLD)
+        parser.add_argument("--model-width", type=int, default=PIDNET_INPUT_WIDTH)
+        parser.add_argument("--model-height", type=int, default=PIDNET_INPUT_HEIGHT)
+        parser.add_argument("--inference-stride", type=int, default=1)
+        parser.add_argument(
+            "--new-smoke-window-sec", type=float, default=NEW_SMOKE_WINDOW_SEC
+        )
+        parser.add_argument("--warmup-sec", type=float, default=PIDNET_WARMUP_SEC)
+    parser.add_argument("--box-hold-sec", type=float, default=CONFIRMED_BOX_HOLD_SEC)
+    parser.add_argument("--panel-hold-sec", type=float, default=DISPLAY_SECONDS)
     return parser
 
 
@@ -276,15 +366,43 @@ def build_detector_config() -> DetectorConfig:
     return DetectorConfig(
         downscale=DOWNSCALE,
         stride_frames=max(STRIDE_FRAMES, 1),
+        diff_interval_sec=DIFF_INTERVAL_SEC,
         diff_threshold=DIFF_THRESHOLD,
+        open_kernel_size=OPEN_KERNEL_SIZE,
+        close_kernel_size=CLOSE_KERNEL_SIZE,
+        close_iterations=CLOSE_ITERATIONS,
         min_blob_area=MIN_BLOB_AREA,
+        min_confirm_area=MIN_CONFIRM_AREA,
         min_growth_ratio=MIN_GROWTH_RATIO,
+        min_residual_polarity_ratio=MIN_RESIDUAL_POLARITY_RATIO,
+        min_residual_signed_coherence=MIN_RESIDUAL_SIGNED_COHERENCE,
+        min_candidate_fill_ratio=MIN_CANDIDATE_FILL_RATIO,
+        max_initial_motion_history_overlap=MAX_INITIAL_MOTION_HISTORY_OVERLAP,
+        small_min_blob_area=SMALL_MIN_BLOB_AREA,
+        small_diff_floor=SMALL_DIFF_FLOOR,
+        small_noise_window_size=SMALL_NOISE_WINDOW_SIZE,
+        small_noise_sigma=SMALL_NOISE_SIGMA,
+        small_min_signal_to_noise=SMALL_MIN_SIGNAL_TO_NOISE,
+        small_min_growth_ratio=SMALL_MIN_GROWTH_RATIO,
+        small_max_center_shift_ratio=SMALL_MAX_CENTER_SHIFT_RATIO,
+        small_confirmation_hits_required=SMALL_CONFIRMATION_HITS_REQUIRED,
+        small_min_cumulative_signal=SMALL_MIN_CUMULATIVE_SIGNAL,
+        max_distributed_candidates=MAX_DISTRIBUTED_CANDIDATES,
+        min_candidate_field_span_ratio=MIN_CANDIDATE_FIELD_SPAN_RATIO,
+        confirmation_hits_required=CONFIRMATION_HITS_REQUIRED,
         stop_growth_ratio=STOP_GROWTH_RATIO,
         max_event_age_sec=MAX_EVENT_AGE_SEC,
         confirmed_box_hold_sec=CONFIRMED_BOX_HOLD_SEC,
         track_match_distance=TRACK_MATCH_DISTANCE,
         trajectory_match_distance=TRAJECTORY_MATCH_DISTANCE,
         recent_confirmed_match_sec=RECENT_CONFIRMED_MATCH_SEC,
+        post_event_memory_max_sec=POST_EVENT_MEMORY_MAX_SEC,
+        post_event_memory_idle_sec=POST_EVENT_MEMORY_IDLE_SEC,
+        post_event_spatial_history_sec=POST_EVENT_SPATIAL_HISTORY_SEC,
+        post_event_match_distance=POST_EVENT_MATCH_DISTANCE,
+        post_event_trajectory_distance=POST_EVENT_TRAJECTORY_DISTANCE,
+        post_event_retrigger_min_area=POST_EVENT_RETRIGGER_MIN_AREA,
+        post_event_retrigger_min_growth_ratio=POST_EVENT_RETRIGGER_MIN_GROWTH_RATIO,
         max_missed_frames=MAX_MISSED_FRAMES,
         min_dimension_growth_ratio=MIN_DIMENSION_GROWTH_RATIO,
         max_center_shift_ratio=MAX_CENTER_SHIFT_RATIO,
@@ -293,6 +411,27 @@ def build_detector_config() -> DetectorConfig:
         draw_debug_tiles=DRAW_DEBUG_TILES if debug_mode else False,
         show_candidate_boxes=SHOW_CANDIDATE_BOXES if debug_mode else False,
         show_status_overlay=debug_mode,
+    )
+
+
+def build_pidnet_detector_config(args: argparse.Namespace) -> PIDNetSmokeTrackerConfig:
+    debug_mode = UI_MODE.lower() == "debug"
+    return PIDNetSmokeTrackerConfig(
+        model_path=args.model_path,
+        device=args.device,
+        input_width=args.model_width,
+        input_height=args.model_height,
+        inference_stride=max(args.inference_stride, 1),
+        segmentation_threshold=args.seg_threshold,
+        min_component_area=PIDNET_MIN_COMPONENT_AREA,
+        warmup_sec=args.warmup_sec,
+        new_smoke_window_sec=args.new_smoke_window_sec,
+        confirmation_hits=PIDNET_CONFIRMATION_HITS,
+        min_confirmation_confidence=PIDNET_MIN_CONFIRMATION_CONFIDENCE,
+        track_match_distance=TRACK_MATCH_DISTANCE,
+        post_event_memory_sec=POST_EVENT_MEMORY_MAX_SEC,
+        show_status_overlay=debug_mode,
+        show_candidate_boxes=SHOW_CANDIDATE_BOXES if debug_mode else False,
     )
 
 
@@ -321,6 +460,13 @@ def _draw_event_card(
         (left + 18, top + 14),
         34 if compact else 42,
         (30, 43, 61),
+    )
+    _draw_text_inplace(
+        panel,
+        f"NEW  {event.confidence:.2f}",
+        (right - 142, top + 22),
+        19 if compact else 23,
+        (22, 92, 185),
     )
 
     label_x = left + 16
@@ -430,13 +576,37 @@ def get_panel_width(mode: str) -> int:
     return max(PANEL_WIDTH, 760)
 
 
-def write_coordinate_log(output_dir: Path, video_stem: str, events: List[LoggedEvent]) -> Path:
-    log_path = output_dir / f"{video_stem}_impact_coordinates.txt"
+def resolve_output_paths(
+    video_stem: str,
+    detector_name: str,
+    output_root: Optional[Path] = None,
+) -> Tuple[Path, Path]:
+    """Return paths in a method-labelled folder without overwriting prior runs."""
+    root = OUTPUT_ROOT if output_root is None else output_root
+    method_name = "pidnet" if detector_name == "pidnet" else "optical_flow"
+    folder_stem = f"{video_stem}_{method_name}"
+    output_dir = root / folder_stem
+    sequence = 2
+    while output_dir.exists():
+        output_dir = root / f"{folder_stem}_{sequence:02d}"
+        sequence += 1
+    output_dir.mkdir(parents=True, exist_ok=False)
+
+    return (
+        output_dir / f"output_{video_stem}.mp4",
+        output_dir / f"{video_stem}_impact_coordinates.txt",
+    )
+
+
+def write_coordinate_log(log_path: Path, events: List[LoggedEvent]) -> Path:
     with log_path.open("w", encoding="utf-8") as fh:
         for event in events:
             fh.write(
                 f"ID {event.event_id}: "
                 f"t={event.timestamp_sec:.2f}s, "
+                f"confidence={event.confidence:.3f}, "
+                f"confirmation_delay={event.confirmation_delay_sec:.3f}s, "
+                f"impact_px=({event.impact_point[0]:.1f}, {event.impact_point[1]:.1f}), "
                 f"TWD97(E={event.easting:.2f}, N={event.northing:.2f}), "
                 f"WGS84(lat={event.lat:.6f}, lon={event.lon:.6f})\n"
             )
@@ -452,6 +622,8 @@ def coordinate(
     roll: float,
     orix: float,
     oriy: float,
+    image_width: float = 2840.0,
+    image_height: float = 2840.0,
 ) -> Tuple[float, float]:
     a = 6378137.0
     b = 6356752.3142451
@@ -512,11 +684,14 @@ def coordinate(
     f = 4.5 / 0.00274
     f2 = 4.5
     pixel_size = 0.00274
-    image_width = 2840
-    image_height = 2840
-
-    dx_pixel = orix - image_width / 2
-    dy_pixel = -oriy + image_height / 2
+    # The original calibration is expressed on a 2840 x 2840 raster. Map the
+    # event pixel into that raster so video resolution does not change the FOV.
+    calibration_width = 2840.0
+    calibration_height = 2840.0
+    calibrated_x = orix * calibration_width / max(image_width, 1.0)
+    calibrated_y = oriy * calibration_height / max(image_height, 1.0)
+    dx_pixel = calibrated_x - calibration_width / 2
+    dy_pixel = -calibrated_y + calibration_height / 2
     dist = math.sqrt(dx_pixel**2 + dy_pixel**2)
     if dist == 0:
         dist = 1e-6
@@ -582,9 +757,27 @@ def twd97_to_wgs84(easting: float, northing: float) -> Tuple[float, float]:
     return math.degrees(lon), math.degrees(lat)
 
 
-def main() -> None:
-    args = build_arg_parser().parse_args()
-    config = build_detector_config()
+def main(
+    default_detector: str = DETECTOR_BACKEND,
+    *,
+    allow_detector_selection: bool = True,
+) -> None:
+    args = build_arg_parser(
+        default_detector=default_detector,
+        allow_detector_selection=allow_detector_selection,
+    ).parse_args()
+    if args.box_hold_sec < 0 or args.panel_hold_sec < 0:
+        raise ValueError("hold durations cannot be negative")
+    if args.detector == "pidnet":
+        if not 0.0 < args.seg_threshold < 1.0:
+            raise ValueError("--seg-threshold must be between 0 and 1")
+        if args.new_smoke_window_sec <= 0:
+            raise ValueError("--new-smoke-window-sec must be positive")
+        if args.warmup_sec < 0:
+            raise ValueError("--warmup-sec cannot be negative")
+        if args.model_width <= 0 or args.model_height <= 0 or args.inference_stride <= 0:
+            raise ValueError(
+                "model dimensions and --inference-stride must be positive")
     image_path = args.reference_image or (Path(IMAGE_PATH) if IMAGE_PATH else None)
     if image_path is not None and not image_path.exists():
         raise FileNotFoundError(f"Reference image does not exist: {image_path}")
@@ -613,12 +806,15 @@ def main() -> None:
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    detector = InstantSmokeDustDetector(config, fps)
+    if args.detector == "pidnet":
+        detector = PIDNetSmokeImpactDetector(build_pidnet_detector_config(args), fps)
+    else:
+        detector = InstantSmokeDustDetector(build_detector_config(), fps)
 
     base_name = video_path.stem
-    output_dir = args.output_dir / base_name
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_video_path = output_dir / f"output_{base_name}.mp4"
+    output_video_path, coordinate_log_path = resolve_output_paths(
+        base_name, args.detector
+    )
 
     writer = None
     frame_idx = args.start_frame
@@ -626,8 +822,8 @@ def main() -> None:
     recent_events: List[LoggedEvent] = []
     recent_red_events: List[LoggedEvent] = []
     all_events: List[LoggedEvent] = []
-    keep_frames = max(int(round(DISPLAY_SECONDS * detector.fps)), 1)
-    red_hold_frames = max(int(round(CONFIRMED_BOX_HOLD_SEC * detector.fps)), 1)
+    keep_frames = max(int(round(args.panel_hold_sec * detector.fps)), 1)
+    red_hold_frames = max(int(round(args.box_hold_sec * detector.fps)), 1)
     panel_width = get_panel_width(UI_MODE)
     available_frames = max(frame_count - args.start_frame, 0) if frame_count else 0
     target_frames = available_frames
@@ -652,8 +848,11 @@ def main() -> None:
 
             for event in detector.consume_pending_confirmations():
                 x, y, w, h = event.bbox
-                cx = x + w / 2.0
-                cy = y + h / 2.0
+                impact_point = getattr(event, "impact_point", (x + w / 2.0, y + h / 2.0))
+                confidence = float(getattr(event, "confidence", 1.0))
+                confirmed_frame_idx = int(
+                    getattr(event, "confirm_frame_idx", event.frame_idx)
+                )
                 easting, northing = coordinate(
                     geo.lon,
                     geo.lat,
@@ -661,8 +860,10 @@ def main() -> None:
                     geo.yaw,
                     geo.pitch,
                     geo.roll,
-                    cx,
-                    cy,
+                    impact_point[0],
+                    impact_point[1],
+                    image_width=frame.shape[1],
+                    image_height=frame.shape[0],
                 )
                 lon, lat = twd97_to_wgs84(easting, northing)
                 logged = LoggedEvent(
@@ -674,15 +875,27 @@ def main() -> None:
                     northing=northing,
                     lon=lon,
                     lat=lat,
+                    confidence=confidence,
+                    impact_point=impact_point,
+                    confirmed_frame_idx=confirmed_frame_idx,
+                    confirmation_delay_sec=(
+                        confirmed_frame_idx - event.frame_idx
+                    ) / detector.fps,
                 )
                 all_events.append(logged)
                 recent_events.append(logged)
                 recent_red_events.append(logged)
 
             recent_events = [
-                event for event in recent_events if frame_idx - event.frame_idx <= keep_frames]
+                event
+                for event in recent_events
+                if frame_idx - event.confirmed_frame_idx <= keep_frames
+            ]
             recent_red_events = [
-                event for event in recent_red_events if frame_idx - event.frame_idx <= red_hold_frames]
+                event
+                for event in recent_red_events
+                if frame_idx - event.confirmed_frame_idx <= red_hold_frames
+            ]
 
             vis = draw_confirmed_event_overlays(vis, recent_red_events)
 
@@ -739,7 +952,7 @@ def main() -> None:
         if writer is not None:
             writer.release()
 
-    log_path = write_coordinate_log(output_dir, base_name, all_events)
+    log_path = write_coordinate_log(coordinate_log_path, all_events)
     print(f"[INFO] Processed frames: {processed}")
     print(f"[INFO] Confirmed events: {len(all_events)}")
     guard_summary = detector.camera_guard_summary()
@@ -753,6 +966,7 @@ def main() -> None:
         f"alt={geo.alt:.3f}, yaw={geo.yaw:.3f}, pitch={geo.pitch:.3f}, roll={geo.roll:.3f}"
     )
     print(f"[INFO] Input video: {video_path}")
+    print(f"[INFO] Detector: {args.detector}")
     print(f"[INFO] Output video: {output_video_path}")
     print(f"[INFO] Coordinate log: {log_path}")
 

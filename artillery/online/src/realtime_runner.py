@@ -21,13 +21,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from mine.offline.offline_event_pipeline import (  # noqa: E402
+from artillery.offline.src.pipelines.shared_pipeline import (  # noqa: E402
     CONFIRMED_BOX_HOLD_SEC,
     build_detector_config,
     coordinate,
     twd97_to_wgs84,
 )
-from mine.offline.smoke_dust_detector import (  # noqa: E402
+from artillery.offline.src.detectors.optical_flow_smoke_detector import (  # noqa: E402
     ConfirmedEvent,
     DetectorConfig,
     InstantSmokeDustDetector,
