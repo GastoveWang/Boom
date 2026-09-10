@@ -33,6 +33,11 @@ class PIDNetSmokeTrackerConfig:
     morphology_kernel: int = 5
     overlay_alpha: float = 0.24
 
+    # A lower PIDNet threshold keeps the first faint smoke pixels as an onset
+    # candidate. It never confirms an event by itself.
+    early_candidate_threshold: float = 0.45
+    early_candidate_min_area: int = 10
+
     # Anything visible while the detector warms up is treated as pre-existing.
     warmup_sec: float = 0.50
     # A candidate must be confirmed inside this interval. Older smoke is silent.
@@ -127,6 +132,23 @@ class _SmokeTrack:
 
 
 @dataclass
+class _EarlyTrack:
+    """Low-confidence PIDNet observations retained until semantic confirmation."""
+
+    track_id: int
+    first_seen_frame: int
+    last_seen_frame: int
+    initial_bbox: BBox
+    bbox: BBox
+    initial_centroid: Point
+    centroid: Point
+    initial_impact_point: Point
+    initial_area: float
+    max_area: float
+    peak_probability: float
+
+
+@dataclass
 class _TrackMemory:
     bbox: BBox
     centroid: Point
@@ -178,8 +200,10 @@ class PIDNetSmokeImpactDetector:
         self.probability_provider = probability_provider
         self.pending_confirmations: List[ConfirmedEvent] = []
         self.tracks: Dict[int, _SmokeTrack] = {}
+        self.early_tracks: Dict[int, _EarlyTrack] = {}
         self.memories: List[_TrackMemory] = []
         self.next_track_id = 1
+        self.next_early_track_id = 1
         self.next_event_id = 1
         self.known_smoke_mask: Optional[np.ndarray] = None
         self.last_probability: Optional[np.ndarray] = None
@@ -221,8 +245,20 @@ class PIDNetSmokeImpactDetector:
             probability = np.clip(probability, 0.0, 1.0)
             binary = probability >= float(self.config.segmentation_threshold)
             binary = self._clean_mask(binary)
+            early_threshold = min(
+                float(self.config.early_candidate_threshold),
+                float(self.config.segmentation_threshold),
+            )
+            early_binary = probability >= early_threshold
+            early_binary = self._clean_mask(early_binary)
             self.last_probability = probability
             self.last_binary_mask = binary
+            early_components = self._components(
+                probability,
+                early_binary,
+                min_area=self.config.early_candidate_min_area,
+            )
+            self._update_early_tracks(early_components, frame_idx)
             self._update_tracks(probability, binary, frame_idx)
         else:
             self._age_tracks(frame_idx)
@@ -243,6 +279,7 @@ class PIDNetSmokeImpactDetector:
         self.last_probability = None
         self.last_binary_mask = None
         self.tracks.clear()
+        self.early_tracks.clear()
         self.memories.clear()
         self._previous_motion_gray = None
 
@@ -471,6 +508,10 @@ class PIDNetSmokeImpactDetector:
             track.centroid = self._transform_point(track.centroid, transform)
             track.bbox = self._transform_bbox(
                 track.bbox, transform, width, height)
+        for track in self.early_tracks.values():
+            track.centroid = self._transform_point(track.centroid, transform)
+            track.bbox = self._transform_bbox(
+                track.bbox, transform, width, height)
         for memory in self.memories:
             memory.centroid = self._transform_point(memory.centroid, transform)
             memory.bbox = self._transform_bbox(
@@ -506,7 +547,11 @@ class PIDNetSmokeImpactDetector:
         return left, top, right - left, bottom - top
 
     def _components(
-        self, probability: np.ndarray, binary: np.ndarray
+        self,
+        probability: np.ndarray,
+        binary: np.ndarray,
+        *,
+        min_area: Optional[int] = None,
     ) -> List[_Component]:
         count, labels, stats, centroids = cv2.connectedComponentsWithStats(
             binary.astype(np.uint8), connectivity=8
@@ -515,7 +560,10 @@ class PIDNetSmokeImpactDetector:
         known = self.known_smoke_mask
         for label in range(1, count):
             area = int(stats[label, cv2.CC_STAT_AREA])
-            if area < max(int(self.config.min_component_area), 1):
+            required_area = (
+                self.config.min_component_area if min_area is None else min_area
+            )
+            if area < max(int(required_area), 1):
                 continue
             x = int(stats[label, cv2.CC_STAT_LEFT])
             y = int(stats[label, cv2.CC_STAT_TOP])
@@ -544,6 +592,94 @@ class PIDNetSmokeImpactDetector:
                 )
             )
         return components
+
+    def _update_early_tracks(
+        self, components: List[_Component], frame_idx: int
+    ) -> None:
+        """Track faint PIDNet regions without allowing them to confirm events."""
+        pairings: List[Tuple[float, int, int]] = []
+        for track_id, track in self.early_tracks.items():
+            for component_idx, component in enumerate(components):
+                iou = _bbox_iou(track.bbox, component.bbox)
+                dist = _distance(track.centroid, component.centroid)
+                adaptive_distance = max(
+                    self.config.track_match_distance,
+                    0.6
+                    * max(
+                        math.hypot(track.bbox[2], track.bbox[3]),
+                        math.hypot(component.bbox[2], component.bbox[3]),
+                    ),
+                )
+                if iou >= self.config.track_min_iou or dist <= adaptive_distance:
+                    score = (1.0 - iou) + dist / max(adaptive_distance, 1.0)
+                    pairings.append((score, track_id, component_idx))
+
+        pairings.sort()
+        used_tracks = set()
+        used_components = set()
+        for _, track_id, component_idx in pairings:
+            if track_id in used_tracks or component_idx in used_components:
+                continue
+            track = self.early_tracks[track_id]
+            component = components[component_idx]
+            track.last_seen_frame = frame_idx
+            track.bbox = component.bbox
+            track.centroid = component.centroid
+            track.max_area = max(track.max_area, float(component.area))
+            track.peak_probability = max(
+                track.peak_probability, component.mean_probability
+            )
+            used_tracks.add(track_id)
+            used_components.add(component_idx)
+
+        for component_idx, component in enumerate(components):
+            if component_idx in used_components:
+                continue
+            track_id = self.next_early_track_id
+            self.next_early_track_id += 1
+            self.early_tracks[track_id] = _EarlyTrack(
+                track_id=track_id,
+                first_seen_frame=frame_idx,
+                last_seen_frame=frame_idx,
+                initial_bbox=component.bbox,
+                bbox=component.bbox,
+                initial_centroid=component.centroid,
+                centroid=component.centroid,
+                initial_impact_point=component.impact_point,
+                initial_area=float(component.area),
+                max_area=float(component.area),
+                peak_probability=component.mean_probability,
+            )
+
+        stale_ids = [
+            track_id
+            for track_id, track in self.early_tracks.items()
+            if frame_idx - track.last_seen_frame > self.new_window_frames
+        ]
+        for track_id in stale_ids:
+            del self.early_tracks[track_id]
+
+    def _matching_early_track(
+        self, component: _Component
+    ) -> Optional[_EarlyTrack]:
+        matches: List[Tuple[float, int, _EarlyTrack]] = []
+        for track in self.early_tracks.values():
+            iou = _bbox_iou(track.bbox, component.bbox)
+            dist = _distance(track.centroid, component.centroid)
+            adaptive_distance = max(
+                self.config.track_match_distance,
+                0.6
+                * max(
+                    math.hypot(track.bbox[2], track.bbox[3]),
+                    math.hypot(component.bbox[2], component.bbox[3]),
+                ),
+            )
+            if iou >= self.config.track_min_iou or dist <= adaptive_distance:
+                score = (1.0 - iou) + dist / max(adaptive_distance, 1.0)
+                matches.append((score, track.track_id, track))
+        if not matches:
+            return None
+        return min(matches, key=lambda item: (item[0], item[1]))[2]
 
     def _update_tracks(
         self, probability: np.ndarray, binary: np.ndarray, frame_idx: int
@@ -604,21 +740,46 @@ class PIDNetSmokeImpactDetector:
     def _create_track(
         self, component: _Component, frame_idx: int, *, preexisting: bool
     ) -> None:
+        early_track = self._matching_early_track(component)
+        first_seen_frame = frame_idx
+        initial_bbox = component.bbox
+        initial_centroid = component.centroid
+        initial_impact_point = component.impact_point
+        initial_area = float(component.area)
+        expired_new_window = False
+        if early_track is not None:
+            first_seen_frame = early_track.first_seen_frame
+            initial_bbox = early_track.initial_bbox
+            initial_centroid = early_track.initial_centroid
+            initial_impact_point = early_track.initial_impact_point
+            initial_area = early_track.initial_area
+            candidate_age = frame_idx - first_seen_frame
+            expired_new_window = candidate_age > self.new_window_frames
+            start_frame = (
+                self._start_frame_idx
+                if self._start_frame_idx is not None
+                else first_seen_frame
+            )
+            preexisting = preexisting or (
+                first_seen_frame - start_frame < self.warmup_frames
+            ) or expired_new_window
+
         track = _SmokeTrack(
             track_id=self.next_track_id,
-            first_seen_frame=frame_idx,
+            first_seen_frame=first_seen_frame,
             last_seen_frame=frame_idx,
-            initial_bbox=component.bbox,
+            initial_bbox=initial_bbox,
             bbox=component.bbox,
-            initial_centroid=component.centroid,
+            initial_centroid=initial_centroid,
             centroid=component.centroid,
-            initial_impact_point=component.impact_point,
-            initial_area=float(component.area),
+            initial_impact_point=initial_impact_point,
+            initial_area=initial_area,
             area=float(component.area),
             max_area=float(component.area),
             peak_probability=component.mean_probability,
             peak_new_pixel_ratio=component.new_pixel_ratio,
             preexisting=preexisting,
+            expired_new_window=expired_new_window,
         )
         self.tracks[track.track_id] = track
         self.next_track_id += 1

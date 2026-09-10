@@ -282,6 +282,19 @@ class ConfirmedEvent:
 
 
 @dataclass
+class OpticalCandidateEvent:
+    """First local-change observation exposed to the fusion pipeline only."""
+
+    candidate_id: int
+    frame_idx: int
+    timestamp_sec: float
+    bbox: Tuple[int, int, int, int]
+    area: float
+    signal_to_noise: float
+    residual_polarity_ratio: float
+
+
+@dataclass
 class ConfirmedTrackSnapshot:
     event_id: int
     confirm_frame: int
@@ -368,6 +381,7 @@ class InstantSmokeDustDetector:
         self.recent_confirmed_tracks: Deque[ConfirmedTrackSnapshot] = deque(maxlen=64)
         self.event_memories: Dict[int, EventMemory] = {}
         self.pending_confirmations: List[ConfirmedEvent] = []
+        self.pending_candidates: List[OpticalCandidateEvent] = []
         self.next_event_id = 1
         self.guard_cooldown = 0
         self.active_guard_reason: Optional[str] = None
@@ -383,6 +397,7 @@ class InstantSmokeDustDetector:
 
     def process_frame(self, frame_bgr: np.ndarray, frame_idx: int) -> np.ndarray:
         self.pending_confirmations = []
+        self.pending_candidates = []
         bundle = self._build_frame_bundle(frame_bgr, frame_idx)
         self.history.append(bundle)
 
@@ -456,6 +471,11 @@ class InstantSmokeDustDetector:
         confirmations = self.pending_confirmations
         self.pending_confirmations = []
         return confirmations
+
+    def consume_pending_candidates(self) -> List[OpticalCandidateEvent]:
+        candidates = self.pending_candidates
+        self.pending_candidates = []
+        return candidates
 
     def camera_guard_summary(self) -> Dict[str, int]:
         return dict(self.guard_counts)
@@ -1486,6 +1506,17 @@ class InstantSmokeDustDetector:
         track.centroid_history.append(candidate.centroid)
         track.bbox_history.append(candidate.bbox)
         self.tracks[track.event_id] = track
+        self.pending_candidates.append(
+            OpticalCandidateEvent(
+                candidate_id=track.event_id,
+                frame_idx=frame_idx,
+                timestamp_sec=frame_idx / self.fps,
+                bbox=candidate.bbox,
+                area=candidate.area,
+                signal_to_noise=candidate.signal_to_noise,
+                residual_polarity_ratio=candidate.residual_polarity_ratio,
+            )
+        )
         self.next_event_id += 1
 
     def _update_single_track(self, track: EventTrack, candidate: BlobCandidate, frame_idx: int) -> None:

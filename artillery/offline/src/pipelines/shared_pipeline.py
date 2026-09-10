@@ -25,6 +25,10 @@ from artillery.offline.src.detectors.optical_flow_smoke_detector import (  # noq
     DetectorConfig,
     InstantSmokeDustDetector,
 )
+from artillery.offline.src.detectors.optical_pidnet_fusion_detector import (  # noqa: E402
+    OpticalPIDNetFusionConfig,
+    OpticalPIDNetFusionDetector,
+)
 
 IMAGE_PATH: Optional[str] = None
 VIDEO_PATH: Optional[str] = None
@@ -102,11 +106,15 @@ PIDNET_DEVICE = "auto"
 PIDNET_INPUT_WIDTH = 960
 PIDNET_INPUT_HEIGHT = 544
 PIDNET_THRESHOLD = 0.80
+PIDNET_EARLY_CANDIDATE_THRESHOLD = 0.45
 PIDNET_MIN_COMPONENT_AREA = 30
+PIDNET_EARLY_CANDIDATE_MIN_AREA = 10
 PIDNET_WARMUP_SEC = 0.50
 NEW_SMOKE_WINDOW_SEC = 1.0
 PIDNET_CONFIRMATION_HITS = 2
 PIDNET_MIN_CONFIRMATION_CONFIDENCE = 0.72
+FUSION_CONFIRMATION_WINDOW_SEC = 1.0
+FUSION_MATCH_DISTANCE_PX = 220.0
 
 
 DRONE_LON = None
@@ -313,7 +321,12 @@ def build_arg_parser(
     *,
     allow_detector_selection: bool = True,
 ) -> argparse.ArgumentParser:
-    algorithm_name = "PIDNet-S" if default_detector == "pidnet" else "optical flow"
+    algorithm_names = {
+        "pidnet": "PIDNet-S",
+        "motion": "optical flow",
+        "fusion": "optical-flow onset plus PIDNet confirmation",
+    }
+    algorithm_name = algorithm_names.get(default_detector, default_detector)
     parser = argparse.ArgumentParser(
         description=f"Offline artillery-impact detection using {algorithm_name}."
     )
@@ -328,18 +341,24 @@ def build_arg_parser(
     if allow_detector_selection:
         parser.add_argument(
             "--detector",
-            choices=("pidnet", "motion"),
+            choices=("pidnet", "motion", "fusion"),
             default=default_detector,
-            help="Select PIDNet-S or traditional optical-flow detection.",
+            help="Select PIDNet-S, optical flow, or their staged fusion.",
         )
     else:
         parser.set_defaults(detector=default_detector)
-    if allow_detector_selection or default_detector == "pidnet":
+    if allow_detector_selection or default_detector in ("pidnet", "fusion"):
         parser.add_argument("--model-path", type=Path, default=PIDNET_MODEL_PATH)
         parser.add_argument(
             "--device", choices=("auto", "cpu", "cuda"), default=PIDNET_DEVICE
         )
         parser.add_argument("--seg-threshold", type=float, default=PIDNET_THRESHOLD)
+        parser.add_argument(
+            "--early-seg-threshold",
+            type=float,
+            default=PIDNET_EARLY_CANDIDATE_THRESHOLD,
+            help="PIDNet-only weak-smoke threshold used to preserve onset time.",
+        )
         parser.add_argument("--model-width", type=int, default=PIDNET_INPUT_WIDTH)
         parser.add_argument("--model-height", type=int, default=PIDNET_INPUT_HEIGHT)
         parser.add_argument("--inference-stride", type=int, default=1)
@@ -347,6 +366,19 @@ def build_arg_parser(
             "--new-smoke-window-sec", type=float, default=NEW_SMOKE_WINDOW_SEC
         )
         parser.add_argument("--warmup-sec", type=float, default=PIDNET_WARMUP_SEC)
+    if allow_detector_selection or default_detector == "fusion":
+        parser.add_argument(
+            "--fusion-window-sec",
+            type=float,
+            default=FUSION_CONFIRMATION_WINDOW_SEC,
+            help="Maximum delay from optical onset to PIDNet confirmation.",
+        )
+        parser.add_argument(
+            "--fusion-match-distance",
+            type=float,
+            default=FUSION_MATCH_DISTANCE_PX,
+            help="Maximum optical/PIDNet impact-point distance in source pixels.",
+        )
     parser.add_argument("--box-hold-sec", type=float, default=CONFIRMED_BOX_HOLD_SEC)
     parser.add_argument("--panel-hold-sec", type=float, default=DISPLAY_SECONDS)
     return parser
@@ -423,7 +455,9 @@ def build_pidnet_detector_config(args: argparse.Namespace) -> PIDNetSmokeTracker
         input_height=args.model_height,
         inference_stride=max(args.inference_stride, 1),
         segmentation_threshold=args.seg_threshold,
+        early_candidate_threshold=args.early_seg_threshold,
         min_component_area=PIDNET_MIN_COMPONENT_AREA,
+        early_candidate_min_area=PIDNET_EARLY_CANDIDATE_MIN_AREA,
         warmup_sec=args.warmup_sec,
         new_smoke_window_sec=args.new_smoke_window_sec,
         confirmation_hits=PIDNET_CONFIRMATION_HITS,
@@ -432,6 +466,14 @@ def build_pidnet_detector_config(args: argparse.Namespace) -> PIDNetSmokeTracker
         post_event_memory_sec=POST_EVENT_MEMORY_MAX_SEC,
         show_status_overlay=debug_mode,
         show_candidate_boxes=SHOW_CANDIDATE_BOXES if debug_mode else False,
+    )
+
+
+def build_fusion_config(args: argparse.Namespace) -> OpticalPIDNetFusionConfig:
+    return OpticalPIDNetFusionConfig(
+        confirmation_window_sec=max(args.fusion_window_sec, 0.01),
+        match_distance_px=max(args.fusion_match_distance, 1.0),
+        draw_pending_candidates=True,
     )
 
 
@@ -583,7 +625,12 @@ def resolve_output_paths(
 ) -> Tuple[Path, Path]:
     """Return paths in a method-labelled folder without overwriting prior runs."""
     root = OUTPUT_ROOT if output_root is None else output_root
-    method_name = "pidnet" if detector_name == "pidnet" else "optical_flow"
+    method_names = {
+        "pidnet": "pidnet",
+        "motion": "optical_flow",
+        "fusion": "optical_pidnet",
+    }
+    method_name = method_names.get(detector_name, detector_name)
     folder_stem = f"{video_stem}_{method_name}"
     output_dir = root / folder_stem
     sequence = 2
@@ -768,9 +815,13 @@ def main(
     ).parse_args()
     if args.box_hold_sec < 0 or args.panel_hold_sec < 0:
         raise ValueError("hold durations cannot be negative")
-    if args.detector == "pidnet":
+    if args.detector in ("pidnet", "fusion"):
         if not 0.0 < args.seg_threshold < 1.0:
             raise ValueError("--seg-threshold must be between 0 and 1")
+        if not 0.0 < args.early_seg_threshold <= args.seg_threshold:
+            raise ValueError(
+                "--early-seg-threshold must be positive and no greater than --seg-threshold"
+            )
         if args.new_smoke_window_sec <= 0:
             raise ValueError("--new-smoke-window-sec must be positive")
         if args.warmup_sec < 0:
@@ -778,6 +829,11 @@ def main(
         if args.model_width <= 0 or args.model_height <= 0 or args.inference_stride <= 0:
             raise ValueError(
                 "model dimensions and --inference-stride must be positive")
+    if args.detector == "fusion":
+        if args.fusion_window_sec <= 0:
+            raise ValueError("--fusion-window-sec must be positive")
+        if args.fusion_match_distance <= 0:
+            raise ValueError("--fusion-match-distance must be positive")
     image_path = args.reference_image or (Path(IMAGE_PATH) if IMAGE_PATH else None)
     if image_path is not None and not image_path.exists():
         raise FileNotFoundError(f"Reference image does not exist: {image_path}")
@@ -808,6 +864,13 @@ def main(
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     if args.detector == "pidnet":
         detector = PIDNetSmokeImpactDetector(build_pidnet_detector_config(args), fps)
+    elif args.detector == "fusion":
+        detector = OpticalPIDNetFusionDetector(
+            build_detector_config(),
+            build_pidnet_detector_config(args),
+            fps,
+            build_fusion_config(args),
+        )
     else:
         detector = InstantSmokeDustDetector(build_detector_config(), fps)
 

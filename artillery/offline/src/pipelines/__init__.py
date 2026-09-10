@@ -1,1 +1,1 @@
-"""Offline PIDNet and optical-flow pipeline entrypoints."""
+"""Offline PIDNet, optical-flow, and staged-fusion pipeline entrypoints."""
