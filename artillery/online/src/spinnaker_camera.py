@@ -4,13 +4,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from spin_camera import (
-    CapturedFrame,
-    LatestFrameGrabber,
-    SpinCamera as _BaseSpinCamera,
-    SpinCameraConfig,
-    _load_pyspin,
-)
+if __package__:
+    from .spin_camera import (
+        CapturedFrame,
+        LatestFrameGrabber,
+        SpinCamera as _BaseSpinCamera,
+        SpinCameraConfig,
+        _load_pyspin,
+    )
+else:
+    from spin_camera import (
+        CapturedFrame,
+        LatestFrameGrabber,
+        SpinCamera as _BaseSpinCamera,
+        SpinCameraConfig,
+        _load_pyspin,
+    )
 
 __all__ = [
     "CapturedFrame",

@@ -1,6 +1,9 @@
 # Boom Online
 
-Boom Online 是 Jetson 上的即時砲擊事件偵測程式。它使用
+程式分工見 [artillery/README.md](../README.md)。即時 pipeline 直接使用
+`artillery/common/` 的設定與座標運算，與離線入口分開。
+
+Boom Online 是 Jetson 上的即時荒野煙霧偵測程式。它使用
 FLIR／Teledyne SpinView 相機的 Spinnaker SDK（PySpin）取得畫面，
 偵測演算法則沿用專案的 `artillery/offline/` detector。
 
@@ -13,6 +16,11 @@ artillery/online/
 ├── requirements-jetson.txt
 ├── src/
 │   ├── realtime_runner.py
+│   ├── boom_online/
+│   │   ├── cli.py / configuration.py
+│   │   ├── pipeline.py
+│   │   ├── positioning.py / storage.py
+│   │   └── logging_setup.py / display.py
 │   ├── spin_camera.py
 │   └── spinnaker_camera.py
 └── output/
@@ -43,6 +51,8 @@ PySpin 也必須使用原廠 SDK 提供的版本。
 ```bash
 boom-online
 ```
+
+也可以在 repository 根目錄使用 `python -m artillery.online`。
 
 或者在 repository 根目錄執行：
 

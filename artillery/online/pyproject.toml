@@ -19,3 +19,5 @@ boom-online = "realtime_runner:main"
 [tool.setuptools]
 package-dir = {"" = "src"}
 py-modules = ["realtime_runner", "spin_camera", "spinnaker_camera"]
+
+packages = ["boom_online"]

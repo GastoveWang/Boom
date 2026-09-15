@@ -1,40 +1,73 @@
-# Python cache / build artifacts
+# Only these two dataset directories are preserved, without their contents.
+/data/*
+!/data/yolo_datasets/
+!/data/raw_video/
+/data/yolo_datasets/**
+/data/raw_video/**
+!/data/yolo_datasets/.gitkeep
+!/data/raw_video/.gitkeep
+
+# Model directories: preserve structure without weights or training artifacts.
+/label/model/**
+!/label/model/**/
+!/label/model/**/.gitkeep
+/artillery/offline/model/**
+!/artillery/offline/model/**/
+!/artillery/offline/model/**/.gitkeep
+
+# Output directories: only explicit placeholders are versioned, never run data.
+/output/**
+!/output/**/
+!/output/**/.gitkeep
+/outputs/**
+!/outputs/**/
+!/outputs/**/.gitkeep
+/label/runs/
+/tests/
+/artillery/online/output/**
+!/artillery/online/output/**/
+!/artillery/online/output/**/.gitkeep
+
+# Large media / weights outside the designated data directories.
+*.[mM][pP]4
+*.[mM][oO][vV]
+*.[aA][vV][iI]
+*.[mM][kK][vV]
+*.[jJ][pP][gG]
+*.[jJ][pP][eE][gG]
+*.[pP][nN][gG]
+*.[tT][iI][fF]
+*.[tT][iI][fF][fF]
+*.[pP][tT]
+*.[pP][tT][hH]
+*.ckpt
+*.onnx
+*.engine
+*.safetensors
+events.out.tfevents.*
+
+# Keep asset contents; preserve only an empty maps directory.
+!/asset/**
+/asset/maps/**
+!/asset/maps/.gitkeep
+
+# Backups, staging and caches are excluded entirely, even with placeholders.
+*.backup_*/
+*.staging_*/
+_map_cache/
+*.cache
+tmp/
+temp/
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-
-# Virtual environments
+.pytest_cache/
 .venv/
 venv/
 env/
-
-# IDE / editor files
 .idea/
 .vscode/
 
-# Local runtime output
-output/
-outputs/
-tmp/
-temp/
-
-# Local documentation
-doc/
-
-# Local datasets / media
-data/
-*.mp4
-*.mov
-*.avi
-*.mkv
-*.jpg
-*.jpeg
-*.png
-
-# Local model checkpoints
-/artillery/offline/model/
-
-# Local external resources
+# External checkouts are installed separately, not vendored into this repo.
+/cvat/
 /mod_ir_smoke/
 /wildfire-real-time-segmentation/
