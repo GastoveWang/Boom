@@ -1,9 +1,26 @@
-from ultralytics import YOLO
 from pathlib import Path
 import shutil
+from tempfile import TemporaryDirectory
+
+
+def find_local_model(model_dir, model_name):
+    """Search all model subfolders for a uniquely named training checkpoint."""
+    filename = f"{model_name}.pt".casefold()
+    matches = sorted(
+        path for path in Path(model_dir).rglob("*")
+        if path.is_file() and path.name.casefold() == filename
+    )
+    if len(matches) > 1:
+        paths = "\n".join(str(path) for path in matches)
+        raise ValueError(
+            f"找到多份同名模型 {model_name}.pt，請使用唯一檔名並更新 MODEL_NAME：\n{paths}"
+        )
+    return matches[0] if matches else None
 
 
 def main():
+    from ultralytics import YOLO
+
     # =========================================================
     # 1. 專案路徑
     # =========================================================
@@ -19,8 +36,9 @@ def main():
     # 2. Dataset / Model 設定
     # =========================================================
 
-    DATASET_NAME = "detect_v1"
-    MODEL_NAME = "yolo26m"
+    DATASET_NAME = "detect_v2"
+    MODEL_NAME = "detect_v1_yolo26m"
+    IMAGE_SIZE = 640
 
     DATASET_DIR = (
         PROJECT_ROOT
@@ -40,7 +58,8 @@ def main():
     PRETRAINED_DIR = MODEL_DIR / "pretrained"
     TRAINED_DIR = MODEL_DIR / "trained"
 
-    PRETRAINED_MODEL = (
+    # 搜尋 model 根目錄與所有子資料夾；找不到時沿用下載流程。
+    PRETRAINED_MODEL = find_local_model(MODEL_DIR, MODEL_NAME) or (
         PRETRAINED_DIR
         / f"{MODEL_NAME}.pt"
     )
@@ -84,7 +103,7 @@ def main():
     print(f"Dataset Name     : {DATASET_NAME}")
     print(f"Dataset YAML     : {DATA_YAML}")
     print(f"Model Name       : {MODEL_NAME}")
-    print(f"Pretrained Model : {PRETRAINED_MODEL}")
+    print(f"Training Model   : {PRETRAINED_MODEL}")
     print(f"Runs Directory   : {RUNS_DIR}")
     print(f"Experiment Name  : {EXPERIMENT_NAME}")
 
@@ -106,7 +125,7 @@ def main():
     if PRETRAINED_MODEL.exists():
 
         print(
-            f"\n找到本地預訓練模型：\n"
+            f"\n找到本地訓練權重：\n"
             f"{PRETRAINED_MODEL}"
         )
 
@@ -174,7 +193,7 @@ def main():
 
         epochs=100,
 
-        imgsz=640,
+        imgsz=IMAGE_SIZE,
 
         # 自動根據 GPU VRAM 決定 batch
         batch=-1,
@@ -221,21 +240,48 @@ def main():
         )
 
     # =========================================================
-    # 11. 將 best.pt 改成 dataset + model 名稱
+    # 11. 設定 ONNX 輸出名稱
     # =========================================================
 
-    OUTPUT_MODEL = (
+    OUTPUT_ONNX = (
         TRAINED_DIR
-        / f"{DATASET_NAME}_{MODEL_NAME}.pt"
+        / f"{DATASET_NAME}_{MODEL_NAME}.onnx"
     )
 
-    shutil.copy2(
-        BEST_WEIGHT,
-        OUTPUT_MODEL
-    )
+    # 避免覆蓋先前保存的 ONNX 模型。
+    output_index = 2
+    while OUTPUT_ONNX.exists():
+        OUTPUT_ONNX = TRAINED_DIR / f"{EXPERIMENT_NAME}_{output_index}.onnx"
+        output_index += 1
 
     # =========================================================
-    # 12. 完成
+    # 12. 在暫存目錄匯出，trained 資料夾只保存 ONNX
+    # =========================================================
+
+    print(f"\n開始匯出 ONNX：\n{OUTPUT_ONNX}")
+
+    try:
+        with TemporaryDirectory(prefix="boom_onnx_") as temp_dir:
+            temp_weight = Path(temp_dir) / OUTPUT_ONNX.with_suffix(".pt").name
+            shutil.copy2(BEST_WEIGHT, temp_weight)
+            exported_onnx = Path(YOLO(str(temp_weight)).export(
+                format="onnx",
+                imgsz=IMAGE_SIZE,
+                batch=1,
+                device="cpu",
+                dynamic=False,
+                simplify=False,
+            ))
+            if not exported_onnx.is_file():
+                raise FileNotFoundError(f"找不到匯出的 ONNX 模型：{exported_onnx}")
+            shutil.copy2(exported_onnx, OUTPUT_ONNX)
+    except Exception as exc:
+        raise RuntimeError(
+            f"ONNX 匯出失敗；原始訓練權重仍保留於：{BEST_WEIGHT}"
+        ) from exc
+
+    # =========================================================
+    # 13. 完成
     # =========================================================
 
     print("\n" + "=" * 70)
@@ -253,8 +299,8 @@ def main():
     )
 
     print(
-        f"\n最終模型：\n"
-        f"{OUTPUT_MODEL}"
+        f"\nONNX 模型：\n"
+        f"{OUTPUT_ONNX}"
     )
 
     print("\n" + "=" * 70)
