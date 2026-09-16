@@ -236,7 +236,7 @@ class BlobCandidate:
 
 @dataclass
 class EventTrack:
-    event_id: int
+    event_id: Optional[int]
     confirmed: bool
     first_seen_frame: int
     last_seen_frame: int
@@ -382,6 +382,7 @@ class InstantSmokeDustDetector:
         self.event_memories: Dict[int, EventMemory] = {}
         self.pending_confirmations: List[ConfirmedEvent] = []
         self.pending_candidates: List[OpticalCandidateEvent] = []
+        self.next_track_id = 1
         self.next_event_id = 1
         self.guard_cooldown = 0
         self.active_guard_reason: Optional[str] = None
@@ -1488,7 +1489,7 @@ class InstantSmokeDustDetector:
 
     def _create_track(self, candidate: BlobCandidate, frame_idx: int) -> None:
         track = EventTrack(
-            event_id=self.next_event_id,
+            event_id=None,
             confirmed=False,
             first_seen_frame=frame_idx,
             last_seen_frame=frame_idx,
@@ -1505,10 +1506,10 @@ class InstantSmokeDustDetector:
         track.area_history.append(candidate.area)
         track.centroid_history.append(candidate.centroid)
         track.bbox_history.append(candidate.bbox)
-        self.tracks[track.event_id] = track
+        self.tracks[self.next_track_id] = track
         self.pending_candidates.append(
             OpticalCandidateEvent(
-                candidate_id=track.event_id,
+                candidate_id=self.next_track_id,
                 frame_idx=frame_idx,
                 timestamp_sec=frame_idx / self.fps,
                 bbox=candidate.bbox,
@@ -1517,7 +1518,7 @@ class InstantSmokeDustDetector:
                 residual_polarity_ratio=candidate.residual_polarity_ratio,
             )
         )
-        self.next_event_id += 1
+        self.next_track_id += 1
 
     def _update_single_track(self, track: EventTrack, candidate: BlobCandidate, frame_idx: int) -> None:
         prev_area = track.current_area if track.area_history else max(
@@ -1706,8 +1707,10 @@ class InstantSmokeDustDetector:
                         update_anchor=True,
                     )
                     return
-                # The event ID is only surfaced after the blob demonstrates a
-                # burst-like growth signature.
+                # Only confirmed, non-duplicate events consume public IDs.
+                # Candidate tracking keeps its own stable dictionary keys.
+                track.event_id = self.next_event_id
+                self.next_event_id += 1
                 track.confirmed = True
                 track.confirm_frame = frame_idx
                 self._remember_event_observation(
