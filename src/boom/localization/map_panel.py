@@ -19,7 +19,7 @@ import math
 import cv2
 import numpy as np
 from boom.ui.drawing import _draw_text_inplace
-
+from boom.ui.theme import BACKGROUND, SURFACE, CARD, BORDER, ACCENT, TEXT, rounded_surface
 from boom.ui.event_style import event_color, event_label
 from .map_widgets import camera_bearing, draw_camera_direction, draw_navigation_card
 def _draw_rotated_drone_icon(panel: np.ndarray, p: tuple[int, int], heading_deg: float, icon: np.ndarray | None) -> None:

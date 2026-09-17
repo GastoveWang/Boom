@@ -91,6 +91,27 @@ def resolve_inputs(args):
     video_path = args.video or (Path(VIDEO_PATH) if VIDEO_PATH else None)
     image_path = args.reference_image or (Path(IMAGE_PATH) if IMAGE_PATH else None)
 
+    def _find_with_ext(path: Optional[Path], suffixes: tuple) -> Optional[Path]:
+        if path is None:
+            return None
+        bases = [path]
+        if not path.is_absolute():
+            bases.append(PROJECT_ROOT / path)
+        for base in bases:
+            if base.exists():
+                return base
+            for suf in suffixes:
+                cand = base.with_name(f"{base.name}{suf}")
+                if cand.exists():
+                    return cand
+                cand_suf = base.with_suffix(suf)
+                if cand_suf.exists():
+                    return cand_suf
+        return path
+
+    video_path = _find_with_ext(video_path, (".MP4", ".mp4", ".MOV", ".mov", ".AVI", ".avi"))
+    image_path = _find_with_ext(image_path, (".JPG", ".jpg", ".JPEG", ".jpeg", ".PNG", ".png"))
+
     # 若未指定影片但有指定照片，推導影片
     if video_path is None and image_path is not None:
         video_path = resolve_video_path(image_path)

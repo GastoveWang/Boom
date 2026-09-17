@@ -19,9 +19,11 @@ python artillery/offline/src/pipelines/optical_pidnet_pipeline.py --video data/0
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+SRC_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = SRC_ROOT.parent
+for p in (str(SRC_ROOT), str(PROJECT_ROOT)):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
 from boom.pipelines.main import main as _run_pipeline
 

@@ -35,10 +35,12 @@ Boom 離線無人機荒野煙霧偵測與定位系統 - 根目錄快速啟動器
 import sys
 from pathlib import Path
 
-# 確保專案根目錄加入 Python 搜尋路徑
+# 確保專案根目錄與 src 目錄加入 Python 搜尋路徑
 PROJECT_ROOT = Path(__file__).resolve().parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+SRC_ROOT = PROJECT_ROOT / "src"
+for p in (str(SRC_ROOT), str(PROJECT_ROOT)):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
 from boom.config import get_config
 from boom.pipelines.main import main as run_pipeline
