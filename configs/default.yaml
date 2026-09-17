@@ -1,0 +1,127 @@
+# ==============================================================================
+# Boom 系統預設設定檔 (default.yaml)
+# ==============================================================================
+
+system:
+  project_name: "Boom"
+  seed: 42
+  device: "auto"  # "auto", "cpu", "cuda"
+  output_root: "outputs"
+  log_level: "INFO"
+
+paths:
+  map_root: "asset/maps"
+  drone_icon: "asset/pictures/drone.png"
+  pidnet_model: "models/pretrained/sam_sup_pidnet_s.pt"
+  pidnet_fallback_model: "artillery/offline/model/sam_sup_pidnet_s.pt"
+
+ui:
+  mode: "client"
+  display_scale: 0.5
+  display_seconds: 10.0
+  no_display: true
+  panel_width: 500
+  show_candidate_boxes: true
+  draw_debug_tiles: false
+  font_paths:
+    - "/System/Library/Fonts/PingFang.ttc"
+    - "/System/Library/Fonts/STHeiti Medium.ttc"
+    - "C:/Windows/Fonts/msjh.ttc"
+    - "C:/Windows/Fonts/msjhbd.ttc"
+    - "C:/Windows/Fonts/mingliu.ttc"
+
+pipeline:
+  start_frame: 0
+  max_frames: -1
+  downscale: 0.7
+  stride_frames: 2
+
+detector:
+  backend: "pidnet"  # "pidnet", "motion", "fusion"
+
+  pidnet:
+    input_width: 960
+    input_height: 544
+    threshold: 0.80
+    early_candidate_threshold: 0.45
+    min_component_area: 30
+    early_candidate_min_area: 10
+    warmup_sec: 0.50
+    new_smoke_window_sec: 1.0
+    confirmation_hits: 2
+    min_confirmation_confidence: 0.72
+
+  motion:
+    diff_interval_sec: 0.12
+    diff_threshold: 18
+    min_blob_area: 15.0
+    min_confirm_area: 35.0
+    min_growth_ratio: 1.3
+    open_kernel_size: 3
+    close_kernel_size: 7
+    close_iterations: 1
+    min_residual_polarity_ratio: 0.60
+    min_residual_signed_coherence: 0.24
+    min_candidate_fill_ratio: 0.16
+    max_initial_motion_history_overlap: 0.55
+    small_min_blob_area: 4.0
+    small_diff_floor: 8.0
+    small_noise_window_size: 31
+    small_noise_sigma: 2.2
+    small_min_signal_to_noise: 2.2
+    small_min_growth_ratio: 1.35
+    small_max_center_shift_ratio: 1.0
+    small_confirmation_hits_required: 3
+    small_min_cumulative_signal: 700.0
+    max_distributed_candidates: 8
+    min_candidate_field_span_ratio: 0.30
+    confirmation_hits_required: 2
+    stop_growth_ratio: 1.08
+    max_event_age_sec: 3.0
+    confirmed_box_hold_sec: 1.5
+    track_match_distance: 200.0
+    trajectory_match_distance: 270.0
+    recent_confirmed_match_sec: 10.0
+    post_event_memory_max_sec: 600.0
+    post_event_memory_idle_sec: 600.0
+    post_event_spatial_history_sec: 600.0
+    post_event_match_distance: 110.0
+    post_event_trajectory_distance: 80.0
+    post_event_retrigger_min_area: 70.0
+    post_event_retrigger_min_growth_ratio: 4.5
+    max_missed_frames: 6
+    min_dimension_growth_ratio: 1.08
+    max_center_shift_ratio: 0.65
+    split_blob_area: 2500.0
+    enable_radial_flow_check: true
+
+  fusion:
+    confirmation_window_sec: 1.0
+    match_distance_px: 220.0
+
+matching:
+  search_radius_m: 1000.0
+  max_candidates: 9
+  roi_size_m: 1000.0
+  max_image_size: 1600
+  max_features: 2048
+  matcher_backend: "superpoint_lightglue"  # "superpoint_lightglue", "sift"
+  device: "auto"
+  lightglue_filter_threshold: 0.1
+  ratio_threshold: 0.70
+  ransac_threshold_px: 3.0
+  min_inliers: 16
+  min_inlier_ratio: 0.35
+  max_reprojection_error_px: 2.5
+  min_coverage: 0.02
+  cache_entries: 9
+  debug: false
+
+localization:
+  mpp: 0.75
+  map_span_m: 1100.0
+  allow_gps_seed: false
+  default_drone_pose:
+    yaw: 0.0
+    pitch: 20.0
+    roll: 0.0

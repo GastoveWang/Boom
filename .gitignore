@@ -1,34 +1,35 @@
-# Only these two dataset directories are preserved, without their contents.
-/data/*
-!/data/yolo_datasets/
-!/data/raw_video/
-/data/yolo_datasets/**
-/data/raw_video/**
-!/data/yolo_datasets/.gitkeep
-!/data/raw_video/.gitkeep
+# ==============================================================================
+# Boom .gitignore
+# ==============================================================================
 
-# Model directories: preserve structure without weights or training artifacts.
-/label/model/**
-!/label/model/**/
-!/label/model/**/.gitkeep
-/artillery/offline/model/**
-!/artillery/offline/model/**/
-!/artillery/offline/model/**/.gitkeep
+# External tools & submodules (Do not upload)
+/X-AnyLabeling/
+/cvat/
+/wildfire-real-time-segmentation/
 
-# Output directories: only explicit placeholders are versioned, never run data.
+# Test directories (Do not upload)
+/test/
+/tests/
+
+# Data: preserve folder structure with .gitkeep only, never upload datasets/videos
+/data/**
+!/data/**/
+!/data/**/.gitkeep
+
+# Models: preserve folder structure with .gitkeep only, never upload weights/checkpoints
+/models/**
+!/models/**/
+!/models/**/.gitkeep
+
+# Outputs: never upload experiment/run outputs
 /output/**
 !/output/**/
 !/output/**/.gitkeep
 /outputs/**
 !/outputs/**/
 !/outputs/**/.gitkeep
-/label/runs/
-/tests/
-/artillery/online/output/**
-!/artillery/online/output/**/
-!/artillery/online/output/**/.gitkeep
 
-# Large media / weights outside the designated data directories.
+# Large media, binary files and weights
 *.[mM][pP]4
 *.[mM][oO][vV]
 *.[aA][vV][iI]
@@ -46,12 +47,15 @@
 *.safetensors
 events.out.tfevents.*
 
-# Keep asset contents; preserve only an empty maps directory.
+# Asset: preserve all asset files (UI icons, pictures, geojson), EXCEPT heavy maps
 !/asset/**
 /asset/maps/**
+!/asset/maps/
 !/asset/maps/.gitkeep
+!/asset/pictures/**
+!/asset/ui/**
 
-# Backups, staging and caches are excluded entirely, even with placeholders.
+# Backups, staging and temporary directories
 *.backup_*/
 *.staging_*/
 _map_cache/
@@ -60,14 +64,12 @@ tmp/
 temp/
 __pycache__/
 *.py[cod]
+*.egg-info/
 .pytest_cache/
 .venv/
 venv/
 env/
+
+# IDE & Editor files
 .idea/
 .vscode/
-
-# External checkouts are installed separately, not vendored into this repo.
-/cvat/
-/mod_ir_smoke/
-/wildfire-real-time-segmentation/

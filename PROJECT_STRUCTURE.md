@@ -2,85 +2,100 @@
 
 Boom is a wilderness smoke detection and localization system for drones in flight. Its goal is to highlight smoke regions in real time and estimate the ground coordinates of suspected smoke sources.
 
-Boom separates shared services from runtime orchestration and detector implementations.
-See `artillery/README.md` for module responsibilities and execution commands.
+The system is organized as a clean, extensible **Modular Monolith** under `src/boom/` with clear boundary separation between domain detection, localization, runtime orchestration, UI rendering, configuration, and tools.
 
-## Current mapping
+---
 
-- `artillery/common/`
-  - `defaults.py`: shared defaults, paths and existing tuning values
-  - `detector_factory.py`: detector configuration and construction
-  - `coordinates.py`: static camera projection and TWD97/WGS84 conversion
-  - `events.py`: runtime-facing event and static georeference records
+## Directory Overview
 
-- `artillery/offline/src/pipelines/`
-  - `pidnet_pipeline.py`: PIDNet-S algorithm entrypoint
-  - `optical_flow_pipeline.py`: traditional optical-flow algorithm entrypoint
-  - `optical_pidnet_pipeline.py`: optical onset followed by PIDNet confirmation
-  - `main.py`, `cli.py`: common offline entrypoint and argument validation
-  - `map_localization.py`: compatibility imports for the localization package
-- `artillery/offline/src/runtime/`
-  - `runner.py`: source → localization → detection → events → UI/output orchestration
-  - `inputs.py`, `reference.py`: video input and legacy static-photo references
-  - `events.py`: event localization and display lifetimes
-  - `output.py`, `progress.py`: encoded video, coordinate logs and progress reporting
-- `artillery/offline/src/ui/`
-  - `drawing.py`, `panels.py`, `composition.py`: overlays, legacy panels and final frame composition
-- `artillery/offline/src/localization/`
-  - `regions.py`: GeoTIFF region bounds and GPS/estimated-view candidate selection
-  - `photo.py`: GPS/XMP metadata, approximate camera intrinsics and image loading
-  - `geo_map.py`: GeoTIFF mosaic, map cache and local geographic coordinates
-  - `geometry.py`: ground-plane projection and validated camera pose estimation
-  - `registration.py`: photo/map initialization, photo/video matching and map correction
-  - `visual_odometry.py`: frame-to-frame feature tracking and pose history
-  - `map_panel.py`: map UI, drone icon, trajectory and event markers
-  - `localizer.py`: runner-facing session API, event projection and localization logging
-- `artillery/offline/src/detectors/`
-  - `pidnet_smoke_detector.py`: semantic smoke segmentation and new-smoke tracking
-  - `optical_flow_smoke_detector.py`: frame differencing, motion compensation and optical-flow validation
-  - `optical_pidnet_fusion_detector.py`: temporal/spatial event matching without merging detector internals
-- `artillery/offline/src/pidnet_model/`
-  - bundled PIDNet architecture and its MIT license
-- `artillery/offline/model/`
-  - detector checkpoints
-- `artillery/online/`
-  - Jetson/Spinnaker real-time runtime
-  - `src/realtime_runner.py`: compatible launch entrypoint
-  - `src/boom_online/`: separate CLI, configuration, pipeline, positioning, storage, logging and display
-  - `src/spin_camera.py`, `src/spinnaker_camera.py`: camera acquisition adapters
-- `wildfire-real-time-segmentation/`
-  - optional upstream PIDNet research and training repository; not required at runtime
-- `data/`
-  - input media
-  - `raw_video/`: raw input videos
-  - `yolo_datasets/<dataset>/`: YOLO images, labels and data.yaml
-  - `0603/`, `0604/`: local GPS-photo/video validation pairs
-- `asset/`
-  - `maps/`: local GeoTIFF region directories (data excluded from Git)
-  - `pictures/`: drone UI icons
-  - `ui/`: Taiwan overview geometry and attribution
-- `output/offline/<video-name>_<method>/`
-  - each pipeline marks its method (`pidnet` or `optical_flow`) on the result folder name
-
-## Detector interface
-
-Each detector should expose the same runtime-facing API:
-
-```python
-process_frame(frame_bgr, frame_idx) -> np.ndarray
-consume_pending_confirmations() -> list
+```
+Boom/
+├── configs/
+│   └── default.yaml             # Centralized YAML configuration
+├── src/
+│   └── boom/                    # Core Python package (pip install -e .)
+│       ├── core/                # Pure domain entities and geodesy
+│       │   ├── events.py        # ConfirmedEvent, LoggedEvent, GeoReference
+│       │   └── coordinates.py   # WGS84 / TWD97 bidirectional conversions
+│       ├── interfaces/          # Abstract contracts (Dependency Inversion)
+│       │   ├── detector.py      # BaseSmokeDetector
+│       │   ├── localizer.py     # BaseLocalizer
+│       │   ├── matcher.py       # BaseFeatureMatcher
+│       │   └── sensor.py        # BaseFrameSource
+│       ├── config/              # YAML config loader & defaults
+│       │   ├── loader.py        # load_config, get_config, ConfigFacade
+│       │   └── defaults.py      # Structured defaults & MapMatchingConfig
+│       ├── detection/           # Smoke detection algorithms
+│       │   ├── pidnet/          # PIDNet-S semantic segmentation & tracking
+│       │   ├── optical_flow/    # Ego-motion compensation & growth ratio
+│       │   ├── fusion/          # Optical onset + PIDNet confirmation
+│       │   └── factory.py       # create_detector unified builder
+│       ├── localization/        # Drone pose tracking & geo projection
+│       │   ├── localizer.py     # MapLocalizer facade (implements BaseLocalizer)
+│       │   ├── geo_map.py       # GeoTIFF raster mosaic and coordinates
+│       │   ├── nearby.py        # SuperPoint + LightGlue nearby tile search
+│       │   ├── photo.py         # Drone EXIF/XMP pose parsing
+│       │   └── visual_odometry.py # Visual odometry tracking
+│       ├── ui/                  # Visualization and multi-panel composition
+│       │   ├── composition.py   # Main video + map panel frame merger
+│       │   ├── drawing.py       # Detection bounding boxes & text
+│       │   ├── panels.py        # Status & coordinate HUD cards
+│       │   └── theme.py         # Colors and typography
+│       ├── runtime/             # Offline runtime lifecycle orchestration
+│       │   ├── runner.py        # Main frame loop coordinator
+│       │   ├── inputs.py        # Video/photo resolution & auto-pairing
+│       │   ├── output.py        # Video encoding & coordinate log writer
+│       │   ├── events.py        # Event confirmation lifetime & state
+│       │   └── progress.py      # FPS and ETA terminal progress
+│       ├── online/              # Drone real-time flight onboard system
+│       │   ├── spinnaker_camera.py # FLIR/Teledyne SpinView driver
+│       │   ├── pipeline.py      # Real-time multi-threaded capture loop
+│       │   ├── storage.py       # Onboard event storage
+│       │   └── runner.py        # Real-time runner
+│       └── pipelines/           # Execution entry points
+│           ├── main.py          # Unified offline pipeline coordinator
+│           └── cli.py           # Command-line parser & validators
+├── models/                      # Neural network weights
+│   ├── pretrained/              # sam_sup_pidnet_s.pt, yolo26m.pt
+│   └── checkpoints/             # Custom fine-tuned weights
+├── tools/                       # Dataset processing and training utilities
+│   ├── split_dataset.py         # 7:3 balanced dataset split (with GUI)
+│   ├── train_yolo.py            # YOLO fine-tuning script
+│   ├── video_to_frames.py       # Video frame extraction utility
+│   └── README.md
+├── benchmarks/                  # External baseline comparisons
+│   ├── mod_ir/                  # MOD-IR paper implementation
+│   └── README.md                # Evaluation protocols
+├── tests/                       # Comprehensive pytest suite
+├── run_offline.py               # Root offline execution launcher
+└── run_realtime.py              # Root real-time onboard execution launcher
 ```
 
-This keeps detection algorithms separate from video, UI and coordinate handling.
+---
 
-## Naming rules
+## Quick Execution Commands
 
-- Python modules use lowercase `snake_case`.
-- Pipeline entrypoints identify the algorithm: `pidnet_pipeline.py`,
-  `optical_flow_pipeline.py`, and `optical_pidnet_pipeline.py`.
-- Detector names identify the implementation rather than using generic names
-  such as `smoke_dust_detector.py`.
-- Pipeline entrypoints select/configure the detector and call a runtime runner.
-- Reusable defaults, detector construction and static coordinates belong in `artillery/common/`.
-- Runtime I/O, event presentation lifetimes and UI stay outside detector implementations.
-- Each method-specific entrypoint fixes its detector; common runtime services are reused internally.
+### 1. Offline Video Inference
+```powershell
+# PIDNet semantic segmentation (default)
+python run_offline.py pidnet --video data/video/1440-1080/DJI_0070_1440-1080.mp4
+
+# Optical flow motion analysis
+python run_offline.py motion --video data/video/1440-1080/DJI_0070_1440-1080.mp4
+
+# Two-stage staged fusion
+python run_offline.py fusion --video data/video/1440-1080/DJI_0070_1440-1080.mp4
+
+# Interactive GUI display
+python run_offline.py motion --video data/video/1440-1080/DJI_0070_1440-1080.mp4 --display
+```
+
+### 2. Drone Onboard Real-time Detection
+```powershell
+python run_realtime.py --exposure-us 5000 --display
+```
+
+### 3. Run Automated Tests
+```powershell
+python -m pytest tests
+```
