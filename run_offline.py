@@ -57,6 +57,7 @@ Boom 離線無人機荒野煙霧偵測與定位 - 快速執行指南
   pidnet   : PIDNet-S 語意分割偵測器（適合煙霧外觀特徵辨識）
   motion   : 光流與影格差分偵測器（適合起煙瞬間與動態煙塵）
   fusion   : 兩階段融合偵測器（光流即時觸發 + PIDNet 特徵確認）
+  yolo     : YOLO 實例分割/物件偵測器（專注 boom 起爆/煙霧，以 BBox 中心定位）
 
 常用選項:
   --video <路徑>           輸入影片路徑 (預設自動搜尋 data/ 下的影片)
@@ -70,6 +71,7 @@ Boom 離線無人機荒野煙霧偵測與定位 - 快速執行指南
 
 範例:
   python run_offline.py --video data/0603/DJI_001_V.MP4
+  python run_offline.py yolo --video data/video/1440-1080/DJI_0070_1440-1080.mp4 --no-map
   python run_offline.py motion --video data/0603/DJI_001_V.MP4 --display
   python run_offline.py fusion --video data/0603/DJI_001_V.MP4 --max-frames 100
 ====================================================================
@@ -92,11 +94,14 @@ def main():
 
     # 檢查第一個參數是否為演算法快捷名稱
     detector = get_config()["detector"]["backend"]
-    if args and args[0].lower() in ("pidnet", "motion", "fusion"):
+    if args and args[0].lower() in ("pidnet", "motion", "fusion", "yolo"):
         detector = args[0].lower()
         args = args[1:]
     elif args and args[0].lower() in ("optical_flow", "flow"):
         detector = "motion"
+        args = args[1:]
+    elif args and args[0].lower() in ("yolo-seg", "yolov8", "yolo26", "yolov11"):
+        detector = "yolo"
         args = args[1:]
 
     # 如果 args 中未指定 --detector，主動帶入快捷演算法

@@ -15,6 +15,7 @@ from .factory import create_detector
 from .pidnet import PIDNetSmokeTrackerConfig, PIDNetSmokeImpactDetector
 from .optical_flow import DetectorConfig, InstantSmokeDustDetector
 from .fusion import OpticalPIDNetFusionConfig, OpticalPIDNetFusionDetector
+from .yolo import YOLOSmokeDetectorConfig, YOLOSmokeImpactDetector
 
 __all__ = [
     "create_detector",
@@ -24,4 +25,6 @@ __all__ = [
     "InstantSmokeDustDetector",
     "OpticalPIDNetFusionConfig",
     "OpticalPIDNetFusionDetector",
+    "YOLOSmokeDetectorConfig",
+    "YOLOSmokeImpactDetector",
 ]

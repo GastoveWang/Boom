@@ -18,6 +18,7 @@ from boom.interfaces.detector import BaseSmokeDetector
 from boom.detection.pidnet import PIDNetSmokeTrackerConfig, PIDNetSmokeImpactDetector
 from boom.detection.optical_flow import DetectorConfig, InstantSmokeDustDetector
 from boom.detection.fusion import OpticalPIDNetFusionConfig, OpticalPIDNetFusionDetector
+from boom.detection.yolo import YOLOSmokeDetectorConfig, YOLOSmokeImpactDetector
 from boom.config.defaults import (
     CLOSE_ITERATIONS, CLOSE_KERNEL_SIZE, CONFIRMATION_HITS_REQUIRED,
     CONFIRMED_BOX_HOLD_SEC, DIFF_INTERVAL_SEC, DIFF_THRESHOLD, DOWNSCALE,
@@ -36,6 +37,8 @@ from boom.config.defaults import (
     SMALL_MIN_CUMULATIVE_SIGNAL, SMALL_MIN_GROWTH_RATIO, SMALL_MIN_SIGNAL_TO_NOISE,
     SMALL_NOISE_SIGMA, SMALL_NOISE_WINDOW_SIZE, SPLIT_BLOB_AREA, STOP_GROWTH_RATIO,
     STRIDE_FRAMES, TRACK_MATCH_DISTANCE, TRAJECTORY_MATCH_DISTANCE, UI_MODE,
+    YOLO_MODEL_PATH, YOLO_CONF_THRESHOLD, YOLO_IOU_THRESHOLD, YOLO_TARGET_CLASSES,
+    YOLO_CONFIRMATION_HITS, YOLO_TRACK_MAX_MISSED_SEC, YOLO_TRACK_MATCH_DISTANCE,
 )
 
 
@@ -123,6 +126,32 @@ def build_fusion_config(args: argparse.Namespace) -> OpticalPIDNetFusionConfig:
     )
 
 
+def build_yolo_detector_config(args: argparse.Namespace) -> YOLOSmokeDetectorConfig:
+    model_path = getattr(args, "yolo_model_path", None) or getattr(args, "model_path", YOLO_MODEL_PATH)
+    conf = getattr(args, "yolo_conf", YOLO_CONF_THRESHOLD)
+    iou = getattr(args, "yolo_iou", YOLO_IOU_THRESHOLD)
+    imgsz = getattr(args, "yolo_imgsz", 640)
+    stride = getattr(args, "inference_stride", 1)
+    device = getattr(args, "device", "auto")
+    hits = getattr(args, "confirmation_hits", YOLO_CONFIRMATION_HITS)
+    match_dist = getattr(args, "yolo_track_match_distance", YOLO_TRACK_MATCH_DISTANCE)
+    max_missed = getattr(args, "yolo_max_missed_sec", YOLO_TRACK_MAX_MISSED_SEC)
+    return YOLOSmokeDetectorConfig(
+        model_path=model_path,
+        device=device,
+        input_size=imgsz,
+        conf_threshold=conf,
+        iou_threshold=iou,
+        inference_stride=max(stride, 1),
+        target_classes=YOLO_TARGET_CLASSES,
+        confirmation_hits=hits,
+        track_match_distance=match_dist,
+        max_missed_sec=max_missed,
+        post_event_memory_sec=POST_EVENT_MEMORY_MAX_SEC,
+        show_status_overlay=True,
+    )
+
+
 def create_detector(
     detector_or_args: Any,
     fps: float = 30.0,
@@ -132,7 +161,7 @@ def create_detector(
     """
     建立煙霧偵測器。
 
-    :param detector_or_args: 偵測器型別字串 ("pidnet", "motion", "fusion") 或含 .detector 的 Namespace 物件
+    :param detector_or_args: 偵測器型別字串 ("pidnet", "motion", "fusion", "yolo") 或含 .detector 的 Namespace 物件
     :param fps: 影像來源之影格率
     :param config: 對應演算法之設定物件 (可選)
     :param kwargs: 額外參數覆寫
@@ -153,6 +182,9 @@ def create_detector(
             )
         elif d_type == "motion":
             return InstantSmokeDustDetector(build_detector_config(), fps)
+        elif d_type in ("yolo", "yolo-seg", "yolov8", "yolov11", "yolo26"):
+            cfg = build_yolo_detector_config(args)
+            return YOLOSmokeImpactDetector(cfg, fps)
         else:
             raise ValueError(f"Unknown detector in args: {args.detector}")
 
@@ -181,7 +213,14 @@ def create_detector(
             fusion_cfg = kwargs.get("fusion_config") or OpticalPIDNetFusionConfig()
         return OpticalPIDNetFusionDetector(optical_cfg, pidnet_cfg, fps, fusion_cfg)
 
+    elif d_type in ("yolo", "yolo-seg", "yolov8", "yolov11", "yolo26"):
+        if config is None or not isinstance(config, YOLOSmokeDetectorConfig):
+            cfg = YOLOSmokeDetectorConfig(**kwargs) if kwargs else YOLOSmokeDetectorConfig()
+        else:
+            cfg = config
+        return YOLOSmokeImpactDetector(cfg, fps)
+
     else:
         raise ValueError(
-            f"Unsupported detector type: '{detector_or_args}'. Supported: 'pidnet', 'motion', 'fusion'"
+            f"Unsupported detector type: '{detector_or_args}'. Supported: 'pidnet', 'motion', 'fusion', 'yolo'"
         )

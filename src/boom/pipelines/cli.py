@@ -43,6 +43,12 @@ from boom.config.defaults import MAP_ROOT
 from boom.config.defaults import DRONE_ICON_PATH
 from boom.config.defaults import START_FRAME
 from boom.config.defaults import MapMatchingConfig
+from boom.config.defaults import (
+    YOLO_MODEL_PATH,
+    YOLO_CONF_THRESHOLD,
+    YOLO_IOU_THRESHOLD,
+    YOLO_INPUT_SIZE,
+)
 from pathlib import Path
 import argparse
 
@@ -56,6 +62,7 @@ def build_arg_parser(
         "pidnet": "PIDNet-S",
         "motion": "optical flow",
         "fusion": "optical-flow onset plus PIDNet confirmation",
+        "yolo": "YOLO (boom detection)",
     }
     algorithm_name = algorithm_names.get(default_detector, default_detector)
     parser = argparse.ArgumentParser(
@@ -102,9 +109,9 @@ def build_arg_parser(
     if allow_detector_selection:
         parser.add_argument(
             "--detector",
-            choices=("pidnet", "motion", "fusion"),
+            choices=("pidnet", "motion", "fusion", "yolo"),
             default=default_detector,
-            help="Select PIDNet-S, optical flow, or their staged fusion.",
+            help="Select PIDNet-S, optical flow, staged fusion, or YOLO.",
         )
     else:
         parser.set_defaults(detector=default_detector)
@@ -140,6 +147,43 @@ def build_arg_parser(
             default=FUSION_MATCH_DISTANCE_PX,
             help="Maximum optical/PIDNet impact-point distance in source pixels.",
         )
+    if allow_detector_selection or default_detector == "yolo":
+        parser.add_argument(
+            "--yolo-model-path",
+            type=Path,
+            default=YOLO_MODEL_PATH,
+            help=f"Path to YOLO ONNX/PT model (default: {YOLO_MODEL_PATH}).",
+        )
+        parser.add_argument(
+            "--yolo-conf",
+            type=float,
+            default=YOLO_CONF_THRESHOLD,
+            help=f"YOLO detection confidence threshold (default: {YOLO_CONF_THRESHOLD}).",
+        )
+        parser.add_argument(
+            "--yolo-iou",
+            type=float,
+            default=YOLO_IOU_THRESHOLD,
+            help="YOLO NMS IoU threshold (default: 0.45).",
+        )
+        parser.add_argument(
+            "--yolo-imgsz",
+            type=int,
+            default=YOLO_INPUT_SIZE,
+            help="YOLO input image size (default: 640).",
+        )
+        parser.add_argument(
+            "--yolo-track-match-distance",
+            type=float,
+            default=140.0,
+            help="YOLO tracking match distance in pixels (default: 140.0).",
+        )
+        parser.add_argument(
+            "--yolo-max-missed-sec",
+            type=float,
+            default=2.0,
+            help="YOLO tracking max missed tolerance in seconds (default: 2.0).",
+        )
     parser.add_argument("--box-hold-sec", type=float, default=CONFIRMED_BOX_HOLD_SEC)
     parser.add_argument("--panel-hold-sec", type=float, default=DISPLAY_SECONDS)
     return parser
@@ -168,6 +212,13 @@ def validate_args(args):
             raise ValueError("--fusion-window-sec must be positive")
         if args.fusion_match_distance <= 0:
             raise ValueError("--fusion-match-distance must be positive")
+    if args.detector == "yolo":
+        if hasattr(args, "yolo_conf") and not 0.0 < args.yolo_conf <= 1.0:
+            raise ValueError("--yolo-conf must be in (0, 1]")
+        if hasattr(args, "yolo_iou") and not 0.0 < args.yolo_iou <= 1.0:
+            raise ValueError("--yolo-iou must be in (0, 1]")
+        if hasattr(args, "yolo_imgsz") and args.yolo_imgsz <= 0:
+            raise ValueError("--yolo-imgsz must be positive")
 
 
 def map_matching_config(args):

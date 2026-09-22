@@ -14,6 +14,7 @@ paths:
   drone_icon: "asset/pictures/drone.png"
   pidnet_model: "models/pretrained/sam_sup_pidnet_s.pt"
   pidnet_fallback_model: "artillery/offline/model/sam_sup_pidnet_s.pt"
+  yolo_model: "models/checkpoints/boom_v1_yolo26m-seg.onnx"
 
 ui:
   mode: "client"
@@ -37,7 +38,15 @@ pipeline:
   stride_frames: 2
 
 detector:
-  backend: "pidnet"  # "pidnet", "motion", "fusion"
+  backend: "pidnet"  # "pidnet", "motion", "fusion", "yolo"
+
+  yolo:
+    model_path: "models/checkpoints/boom_v1_yolo26m-seg.onnx"
+    input_size: 640
+    conf_threshold: 0.25
+    iou_threshold: 0.45
+    target_classes: ["boom"]
+    confirmation_hits: 2
 
   pidnet:
     input_width: 960
