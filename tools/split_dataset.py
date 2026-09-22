@@ -1,4 +1,4 @@
-"""Split paired YOLO detection data 70:30, balancing every class."""
+"""Split paired YOLO detection and segmentation data 70:30, balancing every class."""
 from __future__ import annotations
 
 from collections import Counter, defaultdict
@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 import random
 import shutil
+import sys
 from uuid import uuid4
 
 import numpy as np
@@ -71,13 +72,30 @@ def read_dataset(source, min_samples=2, classes_file=None):
             if not line.strip():
                 continue
             parts = line.split()
-            if len(parts) != 5:
-                raise ValueError(f"Expected YOLO detection 'class x y w h': {label}:{number}")
-            category = int(parts[0])
-            box = list(map(float, parts[1:]))
-            if category not in names or not all(math.isfinite(v) and 0 <= v <= 1 for v in box) or min(box[2:]) <= 0:
-                raise ValueError(f"Invalid class or normalized box: {label}:{number}")
-            counts[category] += 1
+            if len(parts) == 5:
+                # YOLO detection: class x y w h
+                try:
+                    category = int(parts[0])
+                    box = list(map(float, parts[1:]))
+                except ValueError:
+                    raise ValueError(f"Invalid numeric values in YOLO detection: {label}:{number}")
+                if category not in names or not all(math.isfinite(v) and -0.001 <= v <= 1.001 for v in box) or min(box[2:]) <= 0:
+                    raise ValueError(f"Invalid class or normalized box: {label}:{number}")
+                counts[category] += 1
+            elif len(parts) >= 7 and len(parts) % 2 == 1:
+                # YOLO segmentation: class x1 y1 x2 y2 ... xn yn (polygon with at least 3 points)
+                try:
+                    category = int(parts[0])
+                    coords = list(map(float, parts[1:]))
+                except ValueError:
+                    raise ValueError(f"Invalid numeric values in YOLO segmentation: {label}:{number}")
+                if category not in names or not all(math.isfinite(v) and -0.001 <= v <= 1.001 for v in coords):
+                    raise ValueError(f"Invalid class or normalized polygon coordinates: {label}:{number}")
+                counts[category] += 1
+            else:
+                raise ValueError(
+                    f"Expected YOLO detection ('class x y w h') or segmentation ('class x1 y1 x2 y2 ...'): {label}:{number}"
+                )
         # Keep duplicate content together rather than leaking across splits.
         digest = hashlib.sha256(image.read_bytes()).hexdigest()
         if digest in hashes and hashes[digest] != annotation.strip():
@@ -411,7 +429,7 @@ class SplitDatasetUI:
         buttons.pack(fill="x")
         self.button(buttons, "加入資料夾", self.add_source).pack(side="left")
         self.button(buttons, "移除選取", self.remove_sources).pack(side="left", padx=8)
-        ttk.Label(panel, text="支援 images/labels 分開，或圖片與標註在同一層。").pack(anchor="w", pady=(6, 14))
+        ttk.Label(panel, text="支援 YOLO 偵測（bounding box）與分割（polygon），支援 images/labels 分開或同層。").pack(anchor="w", pady=(6, 14))
 
         shared = DATA_ROOT / "classes.txt"
         self.classes = tk.StringVar(value=str(shared) if shared.is_file() else "")
@@ -559,7 +577,51 @@ class SplitDatasetUI:
             self.root.destroy()
 
 
+def parse_args(argv=None):
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Boom YOLO 偵測與分割資料集 7:3 類別平衡切分工具"
+    )
+    parser.add_argument("--source", "-s", nargs="+", help="來源資料夾路徑（可指定多個）")
+    parser.add_argument("--classes", "-c", help="共用 classes.txt 類別檔路徑")
+    parser.add_argument("--output", "-o", help="輸出上層資料夾路徑（搭配 --name 產生版本資料夾）")
+    parser.add_argument("--name", "-n", default="dataset", help="資料集名稱（預設：dataset）")
+    parser.add_argument("--seed", type=int, default=42, help="隨機種子（預設：42）")
+    parser.add_argument("--dry-run", action="store_true", help="僅預檢分配，不寫入檔案")
+    parser.add_argument("--in-place", action="store_true", help="針對單一現有資料集進行原地重新切分（保留備份）")
+    return parser.parse_args(argv)
+
+
 def main():
+    if len(sys.argv) > 1:
+        args = parse_args()
+        if args.in_place:
+            if not args.source or len(args.source) != 1:
+                print("錯誤：--in-place 模式需指定單一 --source 資料集路徑。")
+                sys.exit(1)
+            run_in_place(args.source[0], seed=args.seed, dry_run=args.dry_run)
+            return
+        if not args.source or not args.output:
+            print("錯誤：請指定 --source 與 --output。使用 -h 查看說明。")
+            sys.exit(1)
+        classes_file = args.classes
+        if not classes_file:
+            shared = DATA_ROOT / "classes.txt"
+            if shared.is_file():
+                classes_file = str(shared)
+            else:
+                print("錯誤：未指定 --classes 且預設 classes.txt 不存在。")
+                sys.exit(1)
+        build_dataset(
+            sources=args.source,
+            classes_file=classes_file,
+            output_parent=args.output,
+            name=args.name,
+            seed=args.seed,
+            dry_run=args.dry_run,
+        )
+        return
+
     root = tk.Tk()
     SplitDatasetUI(root)
     root.mainloop()
