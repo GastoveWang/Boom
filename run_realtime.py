@@ -6,11 +6,12 @@ Boom 即時無人機煙霧偵測執行器 (run_realtime.py)
 
 【模組定位】
 本腳本為無人機機載即時煙霧偵測與定位的主執行入口。
-透過 Spinnaker SDK 連接 FLIR 機載相機，即時擷取影格、執行光流差分推論與大地坐標解算。
+透過 Spinnaker SDK 連接 FLIR 機載相機，即時擷取影格，並依指定路線執行光流或 YOLO 偵測。
 
 【使用範例】
   python run_realtime.py --help
-  python run_realtime.py --serial 12345678 --exposure 5000
+  python run_realtime.py motion --serial 12345678 --exposure-us 5000
+  python run_realtime.py yolo --display
 ==============================================================================
 """
 

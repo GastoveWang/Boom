@@ -46,6 +46,7 @@ class YOLOSmokeDetectorConfig:
         / "boom_v1_yolo26m-seg.onnx"
     )
     device: str = "auto"
+    precision: str = "fp32"
     input_size: int = 640
     conf_threshold: float = 0.50  # 調高偵測辨識閥值（預設 0.50），過濾雜訊
     iou_threshold: float = 0.45
@@ -167,6 +168,7 @@ class YOLOSmokeImpactDetector(BaseSmokeDetector):
         self._model = None
         self._backend = "none"  # "ultralytics" or "onnxruntime"
         self._class_names: Dict[int, str] = {0: "smoke", 1: "boom"}
+        self._validated_target_classes = False
         self._start_frame_idx: Optional[int] = None
         self._frame_shape: Optional[Tuple[int, int]] = None
         self._previous_motion_gray: Optional[np.ndarray] = None
@@ -183,6 +185,7 @@ class YOLOSmokeImpactDetector(BaseSmokeDetector):
         # 優先嘗試 ultralytics
         try:
             from ultralytics import YOLO
+            from ultralytics.cfg import DEFAULT_CFG_DICT
 
             device = self.config.device
             if device == "auto":
@@ -190,11 +193,24 @@ class YOLOSmokeImpactDetector(BaseSmokeDetector):
                     import torch
 
                     device = "cuda:0" if torch.cuda.is_available() else "cpu"
+                    if device.startswith("cuda") and model_path.suffix.lower() == ".onnx":
+                        import onnxruntime as ort
+                        if "CUDAExecutionProvider" not in ort.get_available_providers():
+                            device = "cpu"
                 except Exception:
                     device = "cpu"
+            self._inference_device = device
+            self._use_half = self.config.precision == "fp16" and str(device).startswith("cuda") and model_path.suffix.lower() == ".pt"
+            self._precision_options = (
+                {"quantize": 16 if self._use_half else None}
+                if "quantize" in DEFAULT_CFG_DICT else {"half": self._use_half}
+            )
+            self._checked_runtime_device = False
             self._model = YOLO(str(model_path))
             self._backend = "ultralytics"
-            if hasattr(self._model, "names") and self._model.names:
+            # Exported models may initialize a CPU backend just to read names.
+            # Let the first predict(device=...) initialize it, then use Results.names.
+            if model_path.suffix.lower() == ".pt" and self._model.names:
                 self._class_names = dict(self._model.names)
             return
         except ImportError:
@@ -208,7 +224,12 @@ class YOLOSmokeImpactDetector(BaseSmokeDetector):
             if self.config.device in ("auto", "cuda"):
                 if "CUDAExecutionProvider" in ort.get_available_providers():
                     providers.insert(0, "CUDAExecutionProvider")
+            if self.config.device == "cuda" and "CUDAExecutionProvider" not in providers:
+                raise RuntimeError("CUDA requested but ONNX Runtime CUDA provider is unavailable")
             self._model = ort.InferenceSession(str(model_path), providers=providers)
+            if self.config.device == "cuda" and "CUDAExecutionProvider" not in self._model.get_providers():
+                raise RuntimeError("ONNX Runtime could not initialize CUDAExecutionProvider")
+            print(f"[INFO] YOLO ONNX providers: {self._model.get_providers()}")
             self._backend = "onnxruntime"
             return
         except ImportError:
@@ -275,12 +296,34 @@ class YOLOSmokeImpactDetector(BaseSmokeDetector):
                 conf=self.config.conf_threshold,
                 iou=self.config.iou_threshold,
                 imgsz=self.config.input_size,
+                device=self._inference_device,
+                **self._precision_options,
                 verbose=False,
             )
+            if not self._checked_runtime_device:
+                backend = self._model.predictor.model
+                session = getattr(backend, "session", None)
+                if session is not None and str(self._inference_device).startswith("cuda"):
+                    if "CUDAExecutionProvider" not in session.get_providers():
+                        if self.config.device == "cuda":
+                            raise RuntimeError("YOLO ONNX fell back to CPU despite --device cuda")
+                        self._inference_device = "cpu"
+                        print("[WARN] YOLO ONNX CUDA provider unavailable at runtime; using CPU")
+                self._checked_runtime_device = True
             if not preds:
                 return results
 
             pred = preds[0]
+            self._class_names = dict(pred.names)
+            if not self._validated_target_classes:
+                available = {str(name).lower().strip() for name in self._class_names.values()}
+                missing = target_classes_lower - available
+                if missing:
+                    raise ValueError(
+                        f"YOLO model has no target class(es): {', '.join(sorted(missing))}. "
+                        f"Available classes: {', '.join(sorted(available))}"
+                    )
+                self._validated_target_classes = True
             if pred.boxes is None or len(pred.boxes) == 0:
                 return results
 
@@ -639,7 +682,9 @@ class YOLOSmokeImpactDetector(BaseSmokeDetector):
             impact_point=impact_point,
             confirm_frame_idx=frame_idx,
             first_seen_frame_idx=track.first_seen_frame,
-            status="new-impact-boom",
+            status=("new-impact-boom" if track.class_name == "boom"
+                    else "new-impact-smoke" if track.class_name == "smoke"
+                    else f"detected-{track.class_name}"),
             confidence=float(track.peak_confidence),
         )
         self.pending_confirmations.append(event)

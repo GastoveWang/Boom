@@ -16,6 +16,7 @@ Boom 離線使用者介面 - 中文文字渲染與煙霧標註框繪製 (drawing
 ==============================================================================
 """
 from __future__ import annotations
+from functools import lru_cache
 
 from PIL import Image
 from PIL import ImageDraw
@@ -30,6 +31,7 @@ import numpy as np
 from .event_style import event_color, event_label
 
 
+@lru_cache(maxsize=32)
 def _get_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     for path in UI_FONT_PATHS:
         if Path(path).exists():
@@ -47,11 +49,20 @@ def _draw_text_inplace(
     size: int,
     color: Tuple[int, int, int],
 ) -> None:
-    pil_image = Image.fromarray(cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB))
+    font = _get_font(size)
+    # Convert only the text rectangle, rather than the entire panel per label.
+    probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    left, top, right, bottom = probe.textbbox(position, text, font=font)
+    left, top = max(0, left - 1), max(0, top - 1)
+    right, bottom = min(canvas.shape[1], right + 1), min(canvas.shape[0], bottom + 1)
+    if right <= left or bottom <= top:
+        return
+    region = canvas[top:bottom, left:right]
+    pil_image = Image.fromarray(cv2.cvtColor(region, cv2.COLOR_BGR2RGB))
     drawer = ImageDraw.Draw(pil_image)
-    drawer.text(position, text, font=_get_font(size),
+    drawer.text((position[0] - left, position[1] - top), text, font=font,
                 fill=(color[2], color[1], color[0]))
-    canvas[:] = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+    region[:] = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
 
 
 def draw_confirmed_event_overlays(frame: np.ndarray, active_events: List[LoggedEvent], source_shape=None) -> np.ndarray:

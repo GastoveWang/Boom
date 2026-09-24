@@ -30,6 +30,8 @@ import time
 import cv2
 
 from boom.detection import create_detector
+from .async_output import AsyncVideoOutput
+from .live_preview import run_with_preview
 from .events import EventHistory, localize_event
 from .inputs import VideoSource, resolve_inputs
 from .output import VideoOutput, resolve_output_paths, write_coordinate_log
@@ -38,6 +40,12 @@ from boom.ui.composition import compose_frame
 
 
 def run(args):
+    return run_with_preview(lambda preview: _run(args, preview),
+                            enabled=args.display,
+                            max_width=getattr(args, "display_width", 1280))
+
+
+def _run(args, preview):
     image_path, video_path, geo = resolve_inputs(args)
     with ExitStack() as resources:
         source = VideoSource(video_path, args.start_frame)
@@ -45,6 +53,8 @@ def run(args):
         detector = create_detector(args, source.fps)
         output_video_path, coordinate_log_path = resolve_output_paths(video_path.stem, args.detector)
         output = VideoOutput(output_video_path, detector.fps)
+        if getattr(args, "writer_queue", 2) > 0:
+            output = AsyncVideoOutput(output, getattr(args, "writer_queue", 2))
         resources.callback(output.close)
 
         localizer = None
@@ -55,22 +65,6 @@ def run(args):
                                      args.drone_icon, args.map_mpp, args.ground_height, args.allow_gps_seed,
                                      matching_config=map_matching_config(args))
             resources.callback(localizer.close)
-        window_name = "Boom - Wilderness smoke detection"
-        if args.display:
-            cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-
-            def _on_mouse(event, x, y, flags, param):
-                if localizer is None:
-                    return
-                if event == cv2.EVENT_MOUSEWHEEL:
-                    if flags > 0:
-                        localizer.map_span_m = max(150.0, localizer.map_span_m * 0.85)
-                    else:
-                        localizer.map_span_m = min(6000.0, localizer.map_span_m * 1.18)
-
-            cv2.setMouseCallback(window_name, _on_mouse)
-            resources.callback(cv2.destroyAllWindows)
-
         history = EventHistory(detector.fps, args.panel_hold_sec, args.box_hold_sec)
         target_frames = max(source.frame_count-args.start_frame, 0) if source.frame_count else 0
         if args.max_frames > 0:
@@ -81,7 +75,11 @@ def run(args):
         if target_frames:
             print(f"[INFO] Workload: {target_frames} frames ({_format_duration(target_frames/detector.fps)} of video)")
 
-        while True:
+        while not preview.stop.is_set():
+            for flags in preview.take_scroll():
+                if localizer is not None:
+                    factor = 0.85 if flags > 0 else 1.18
+                    localizer.map_span_m = min(6000.0, max(150.0, localizer.map_span_m * factor))
             ok, frame = source.read()
             if not ok:
                 break
@@ -95,10 +93,7 @@ def run(args):
             output.write(combined)
             if localizer and processed == 0:
                 cv2.imwrite(str(output_video_path.parent / "ui_preview.jpg"), combined)
-            if args.display:
-                cv2.imshow(window_name, combined)
-                if cv2.waitKey(1) & 0xFF in (27, ord("q")):
-                    break
+            preview.publish(combined)
 
             frame_idx += 1
             processed += 1
@@ -107,6 +102,8 @@ def run(args):
             if args.max_frames > 0 and processed >= args.max_frames:
                 break
 
+    elapsed = max(time.monotonic() - started_at, 1e-6)
+    print(f"[INFO] Processing including output drain: {processed / elapsed:.2f} fps ({elapsed:.2f}s)")
     log_path = write_coordinate_log(coordinate_log_path, history.all_events)
     report_result(processed, history, detector, image_path, video_path, geo,
                   localizer, output_video_path, log_path, args.detector)

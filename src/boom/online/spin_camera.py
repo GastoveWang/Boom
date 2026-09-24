@@ -7,6 +7,8 @@ online package importable on development machines without the Spinnaker SDK.
 from __future__ import annotations
 
 import importlib
+import importlib.util
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -37,13 +39,18 @@ class CapturedFrame:
 
 
 def _load_pyspin() -> Any:
+    # On Windows the SDK bundles an older OpenMP runtime. Load Torch first
+    # when present, otherwise later CUDA model loading can fail in shm.dll.
+    # Do not rename DLLs or enable duplicate OpenMP runtimes globally.
+    if sys.platform == "win32" and importlib.util.find_spec("torch") is not None:
+        importlib.import_module("torch")
     try:
         return importlib.import_module("PySpin")
     except ImportError as exc:
         raise RuntimeError(
-            "PySpin is not installed. Install the NVIDIA Jetson/aarch64 build "
-            "of the FLIR/Teledyne Spinnaker SDK that matches the JetPack "
-            "Python version; PySpin is supplied by that SDK, not by pip."
+            "Cannot import PySpin. Install the official spinnaker-python wheel "
+            "matching your Spinnaker SDK, OS, architecture and Python version "
+            "in the active environment. Do not install the unrelated pyspin package."
         ) from exc
 
 
@@ -118,13 +125,14 @@ class SpinCamera:
             finally:
                 self._acquiring = False
                 camera.DeInit()
+            self._camera = None
+            del camera
         if self._camera_list is not None:
             self._camera_list.Clear()
+            self._camera_list = None
+        self._processor = None
         if self._system is not None:
             self._system.ReleaseInstance()
-        self._processor = None
-        self._camera = None
-        self._camera_list = None
         self._system = None
         self._pyspin = None
 
