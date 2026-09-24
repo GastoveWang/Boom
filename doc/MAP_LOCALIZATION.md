@@ -1,18 +1,18 @@
 # 地圖與 GPS 照片初始化／VO
 
-`src/localization/` 提供 runner 可共用的地圖與定位模組。煙霧 detector、
+`src/boom/localization/` 提供 runner 可共用的地圖與定位模組。煙霧 detector、
 參數、事件確認與追蹤規則均未修改。目前接入 offline 共用 runner，尚未接入 online runner。
 
-模組分工與匯入方式見 [src/localization/README.md](src/localization/README.md)。
+模組程式位於 [src/boom/localization/](../src/boom/localization/)。
 
 ## 執行
 
-0603 的 GPS 照片與影片，使用 optical-flow 煙霧偵測：
+GPS 照片與影片搭配 Motion 煙霧偵測：
 
 ```powershell
-C:\Users\roger\anaconda3\envs\wildfire_seg\python.exe artillery/offline/src/pipelines/optical_flow_pipeline.py `
-  --reference-image data/0603/DJI_001_P.JPG `
-  --video data/0603/DJI_001_V.MP4 `
+python run_offline.py motion `
+  --reference-image <GPS照片> `
+  --video <影片> `
   --allow-gps-seed `
   --display
 ```
@@ -40,7 +40,7 @@ C:\Users\roger\anaconda3\envs\wildfire_seg\python.exe artillery/offline/src/pipe
 9 張，匹配各候選的局部 ROI；没有附近地圖就回報定位失敗，完整地圖仍保留。
 submap 以資料夾分組；遠近使用 TIFF 地理 bounds 判定，不使用資料夾名稱推測。
 完整 API、CLI 參數、品質門檻、debug 與限制見
-[localization/README.md](src/localization/README.md#粗定位--附近地圖匹配)。
+[定位模組](../src/boom/localization/)。
 
 1. 讀 GPS 照片 EXIF 與 DJI XMP，建立 GPS 起點、近似內參與地面平面。
 2. 載入最近 submap 內所有 GeoTIFF 的完整地理範圍，依各圖 CRS／affine 合成完整 UI 地圖，
@@ -83,7 +83,7 @@ submap 以資料夾分組；遠近使用 TIFF 地理 bounds 判定，不使用�
 無人機旁的扇形與角度統一表示無人機朝向（假設雲台與機頭同向）；扇形為方向示意，並非精確視野。
 地圖保留歷史標點，影片框與圖卡仍依 `--box-hold-sec`、`--panel-hold-sec` 到期隱藏。
 
-每次執行仍建立不覆寫的 `output/offline/<video>_optical_flow[_NN]/`：
+每次執行仍建立不覆寫的 `output/offline/<video>_<method>[_NN]/`：
 
 - `output_<video>.mp4`：偵測畫面與地圖。
 - `ui_preview.jpg`：第一格 UI。
@@ -101,12 +101,10 @@ submap 以資料夾分組；遠近使用 TIFF 地理 bounds 判定，不使用�
 ## 驗證
 
 ```powershell
-python -m unittest discover -s tests -p test_map_localization.py -v
-python tests/validate_localization_video.py --video data/0603/DJI_001_V.MP4 --reference-image data/0603/DJI_001_P.JPG --allow-gps-seed
+python run_offline.py motion --video <影片> --reference-image <GPS照片> --allow-gps-seed --max-frames 360
 ```
 
-第二個指令逐格驗證全片 VO，不執行／修改煙霧 detector，另外產生唯一目錄、
-`summary.json` 與 `trajectory.jpg`。GPS 暫估的成功追蹤率不能代表地圖匹配成功率。
+GPS 暫估的成功追蹤率不能代表地圖匹配成功率。
 
 先前 SIFT 版本的 0603 資料照片對地圖匹配未通過品質門檻。當時照片對影片匹配可用，
 因此 GPS 暫估模式可驗證 VO 與標點流程；**地圖視覺校正與真實定位誤差仍未驗證**。

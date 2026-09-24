@@ -1,6 +1,10 @@
 # Boom 資料準備與 YOLO 訓練工具鏈 (tools/)
 
-本目錄包含 Boom 專案的資料工程、資料集切分、自動標註與 YOLO 訓練工具。
+`tools/` 包含 Boom 專案的資料準備、資料集切分與 YOLO 訓練工具。
+
+相機上機前檢查：`python tools/check_camera.py` 列出 SDK 版本與相機；
+關閉 SpinView 後執行 `python tools/check_camera.py --frames 30` 可測試實際取像。
+多台相機時加上 `--serial YOUR_CAMERA_SERIAL`。需使用已安裝原廠 PySpin 的環境。
 
 ---
 
@@ -72,8 +76,3 @@ python tools/train_yolo.py --export output/yolo_training/boom_v1_yolo26m/weights
 * 程式會自動搜尋 `models/` 與 `label/model/` 根目錄與所有子資料夾中的預訓練權重。
 * 訓練過程與權重保存在 `output/yolo_training/<dataset_name>_<model_name>/`（如 `output/yolo_training/boom_v1_yolo26m/`）。
 * 訓練完成（或訓練中途按 Ctrl+C 中斷但已有 `best.pt` 時）會自動將最優權重 `best.pt` 轉換匯出為 ONNX 格式，保存至 `models/checkpoints/`。
-
----
-
-> **向後相容說明**：
-> 歷史路徑（如 `python label/split_dataset.py` 與 `python label/train_yolo_labeling.py`）仍保留相容轉接，舊指令均可正常運作。

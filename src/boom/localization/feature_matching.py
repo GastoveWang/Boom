@@ -43,7 +43,7 @@ class SuperPointLightGlueBackend:
         except ImportError as exc:
             raise RuntimeError(
                 "SuperPoint + LightGlue requires the offline requirements. "
-                "Install with: python -m pip install -r artillery/offline/requirements.txt"
+                "Install the required map matching dependencies in the active environment."
             ) from exc
         self.torch = torch
         self.max_image_size = config.max_image_size

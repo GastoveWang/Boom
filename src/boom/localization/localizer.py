@@ -4,7 +4,7 @@ Boom 航拍定位 - 地圖定位協調外觀與 Session 管理 (localizer.py)
 ==============================================================================
 
 【檔案定位】
-本檔案為 `artillery.offline.src.localization` 模組的核心外觀（Facade）。
+本檔案為 `boom.localization` 模組的核心外觀（Facade）。
 對外提供給執行期 `runner.py` 呼叫的統一協調類別 `MapLocalizer`，封裝所有底層
 圖資讀取、特徵匹配、視覺里程計與地面座標投影細節。
 

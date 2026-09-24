@@ -4,7 +4,7 @@ Boom 離線執行期 - 輸入媒體解析與視訊擷取生命週期 (inputs.py)
 ==============================================================================
 
 【檔案定位】
-本檔案隸屬於 `artillery.offline.src.runtime` 執行期模組，負責在管線啟動前
+本檔案隸屬於 `boom.runtime` 執行期模組，負責在管線啟動前
 解析無人機輸入影片與參考照片，並提供安全的 OpenCV 視訊擷取物件包裝。
 
 【核心功能】
@@ -23,8 +23,8 @@ Boom 離線執行期 - 輸入媒體解析與視訊擷取生命週期 (inputs.py)
 - `VideoSource`: 視訊擷取來源包裝類別，支援 context cleanup 與影格跳轉。
 
 【相依模組】
-- 上游：被 `artillery.offline.src.runtime.runner` 於執行起點調用。
-- 下游：依賴 `artillery.common.defaults`、`artillery.common.events.GeoReference`、`reference.py`。
+- 上游：被 `boom.runtime.runner` 於執行起點調用。
+- 下游：依賴 `boom.config.defaults`、`boom.core.events.GeoReference`、`reference.py`。
 ==============================================================================
 """
 

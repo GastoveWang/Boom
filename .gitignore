@@ -7,6 +7,10 @@
 /cvat/
 /wildfire-real-time-segmentation/
 
+# Independent projects for thesis comparisons
+/benchmark/*
+!/benchmark/.gitkeep
+
 # Test directories (Do not upload)
 /test/
 /tests/
