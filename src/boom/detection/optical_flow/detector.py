@@ -9,7 +9,7 @@ import numpy as np
 from boom.interfaces.detector import BaseSmokeDetector
 from .types import (
     DetectorConfig, FrameBundle, HomographyResult, RadialFlowResult,
-    BlobCandidate, EventTrack, ConfirmedEvent, OpticalCandidateEvent,
+    BlobCandidate, EventTrack, ConfirmedEvent,
     ConfirmedTrackSnapshot, EventMemory, VideoRunSummary, DetectionArtifact
 )
 
@@ -47,13 +47,14 @@ class InstantSmokeDustDetector(BaseSmokeDetector):
         self.recent_confirmed_tracks: Deque[ConfirmedTrackSnapshot] = deque(maxlen=64)
         self.event_memories: Dict[int, EventMemory] = {}
         self.pending_confirmations: List[ConfirmedEvent] = []
-        self.pending_candidates: List[OpticalCandidateEvent] = []
         self.next_track_id = 1
         self.next_event_id = 1
         self.guard_cooldown = 0
         self.active_guard_reason: Optional[str] = None
         self.guard_counts: Dict[str, int] = {}
         self.motion_history: Optional[np.ndarray] = None
+        # Gray frames in history are immutable; reuse unmasked ORB features.
+        self._orb_cache = {}
         self.orb = cv2.ORB_create(
             nfeatures=self.config.orb_features,
             scaleFactor=1.2,
@@ -64,9 +65,10 @@ class InstantSmokeDustDetector(BaseSmokeDetector):
 
     def process_frame(self, frame_bgr: np.ndarray, frame_idx: int) -> np.ndarray:
         self.pending_confirmations = []
-        self.pending_candidates = []
         bundle = self._build_frame_bundle(frame_bgr, frame_idx)
         self.history.append(bundle)
+        retained = {id(item.gray) for item in self.history}
+        self._orb_cache = {key: value for key, value in self._orb_cache.items() if key in retained}
 
         vis = bundle.bgr.copy()
         zero_debug = np.zeros(bundle.gray.shape, dtype=np.uint8)
@@ -138,11 +140,6 @@ class InstantSmokeDustDetector(BaseSmokeDetector):
         confirmations = self.pending_confirmations
         self.pending_confirmations = []
         return confirmations
-
-    def consume_pending_candidates(self) -> List[OpticalCandidateEvent]:
-        candidates = self.pending_candidates
-        self.pending_candidates = []
-        return candidates
 
     def camera_guard_summary(self) -> Dict[str, int]:
         return dict(self.guard_counts)
@@ -390,9 +387,18 @@ class InstantSmokeDustDetector(BaseSmokeDetector):
             rotation_deg=rotation_deg,
         )
 
+    def _unmasked_orb_features(self, gray):
+        # Only cache owned immutable history frames, never external arrays.
+        if not any(item.gray is gray for item in self.history):
+            return self.orb.detectAndCompute(gray, None)
+        key = id(gray)
+        if key not in self._orb_cache:
+            self._orb_cache[key] = self.orb.detectAndCompute(gray, None)
+        return self._orb_cache[key]
+
     def _estimate_homography_orb(self, src_gray: np.ndarray, dst_gray: np.ndarray) -> HomographyResult:
-        keypoints_a, desc_a = self.orb.detectAndCompute(src_gray, None)
-        keypoints_b, desc_b = self.orb.detectAndCompute(dst_gray, None)
+        keypoints_a, desc_a = self._unmasked_orb_features(src_gray)
+        keypoints_b, desc_b = self._unmasked_orb_features(dst_gray)
         if desc_a is None or desc_b is None or len(keypoints_a) < 8 or len(keypoints_b) < 8:
             return HomographyResult(None, "orb", 0, 0, 0.0)
 
@@ -1173,17 +1179,6 @@ class InstantSmokeDustDetector(BaseSmokeDetector):
         track.centroid_history.append(candidate.centroid)
         track.bbox_history.append(candidate.bbox)
         self.tracks[self.next_track_id] = track
-        self.pending_candidates.append(
-            OpticalCandidateEvent(
-                candidate_id=self.next_track_id,
-                frame_idx=frame_idx,
-                timestamp_sec=frame_idx / self.fps,
-                bbox=candidate.bbox,
-                area=candidate.area,
-                signal_to_noise=candidate.signal_to_noise,
-                residual_polarity_ratio=candidate.residual_polarity_ratio,
-            )
-        )
         self.next_track_id += 1
 
     def _update_single_track(self, track: EventTrack, candidate: BlobCandidate, frame_idx: int) -> None:

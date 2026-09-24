@@ -4,7 +4,7 @@ Boom 離線管線 - 統一調度與啟動器 (main.py)
 ==============================================================================
 
 【檔案定位】
-本檔案為所有特定演算法管線（PIDNet、光流、融合）與 CLI 啟動器的統一調度轉接核心。
+本檔案為 YOLO 與光流管線的統一調度轉接核心。
 將命令列解析、參數合法性驗證與執行期 `runner.run()` 串接為單一入口。
 
 【核心功能】
@@ -13,7 +13,7 @@ Boom 離線管線 - 統一調度與啟動器 (main.py)
   最後調用 `runtime.runner.run(args)` 啟動完整的離線處理迴圈。
 
 【相依模組】
-- 上游：被 `pidnet_pipeline.py`, `optical_flow_pipeline.py`, `optical_pidnet_pipeline.py`, `offline/__main__.py`, `run_offline.py` 調用。
+- 上游：被 `optical_flow_pipeline.py` 與 `run_offline.py` 調用。
 - 下游：調用 `cli.build_arg_parser`, `cli.validate_args`, `runtime.runner.run`。
 ==============================================================================
 """

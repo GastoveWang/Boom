@@ -120,23 +120,7 @@ ENABLE_RADIAL_FLOW_CHECK = True
 DRAW_DEBUG_TILES = False
 SHOW_CANDIDATE_BOXES = True
 
-# PIDNet-S semantic smoke segmentation + new-smoke tracking.  The first second
-# is the only interval in which a newly created track may become an impact event.
-DETECTOR_BACKEND = "pidnet"
-PIDNET_MODEL_PATH = PROJECT_ROOT / "models" / "pretrained" / "sam_sup_pidnet_s.pt"
-PIDNET_DEVICE = "auto"
-PIDNET_INPUT_WIDTH = 960
-PIDNET_INPUT_HEIGHT = 544
-PIDNET_THRESHOLD = 0.80
-PIDNET_EARLY_CANDIDATE_THRESHOLD = 0.45
-PIDNET_MIN_COMPONENT_AREA = 30
-PIDNET_EARLY_CANDIDATE_MIN_AREA = 10
-PIDNET_WARMUP_SEC = 0.50
-NEW_SMOKE_WINDOW_SEC = 1.0
-PIDNET_CONFIRMATION_HITS = 2
-PIDNET_MIN_CONFIRMATION_CONFIDENCE = 0.72
-FUSION_CONFIRMATION_WINDOW_SEC = 1.0
-FUSION_MATCH_DISTANCE_PX = 220.0
+DETECTOR_BACKEND = "motion"
 
 # YOLO instance segmentation / object detection for boom events
 YOLO_MODEL_PATH = PROJECT_ROOT / "models" / "checkpoints" / "boom_v1_yolo26m-seg.onnx"

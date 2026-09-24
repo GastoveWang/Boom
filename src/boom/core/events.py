@@ -29,7 +29,7 @@ class GeoReference:
 class ConfirmedEvent:
     """
     偵測器確認起煙之原始事件記錄。
-    跨 PIDNet, Optical Flow, Fusion 與未來所有 Detector 之統一介面載體。
+    跨 YOLO 與 Optical Flow 偵測器的統一介面載體。
     """
     event_id: int
     frame_idx: int

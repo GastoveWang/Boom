@@ -285,19 +285,6 @@ class ConfirmedEvent:
 
 
 @dataclass
-class OpticalCandidateEvent:
-    """First local-change observation exposed to the fusion pipeline only."""
-
-    candidate_id: int
-    frame_idx: int
-    timestamp_sec: float
-    bbox: Tuple[int, int, int, int]
-    area: float
-    signal_to_noise: float
-    residual_polarity_ratio: float
-
-
-@dataclass
 class ConfirmedTrackSnapshot:
     event_id: int
     confirm_frame: int

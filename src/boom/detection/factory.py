@@ -4,7 +4,7 @@ Boom 煙霧辨識器工廠 (factory.py)
 ==============================================================================
 
 【模組職責】
-根據指定的演算法類型（`pidnet`, `motion`, `fusion`）與設定參數，
+根據指定的演算法類型（`motion`, `yolo`）與設定參數，
 動態建立並初始化對應的煙霧偵測器實例。
 支援傳入字串、設定物件或命令列解析之 Namespace。
 所有回傳之偵測器均遵循 `BaseSmokeDetector` 介面契約。
@@ -15,9 +15,7 @@ Boom 煙霧辨識器工廠 (factory.py)
 from typing import Any, Optional
 import argparse
 from boom.interfaces.detector import BaseSmokeDetector
-from boom.detection.pidnet import PIDNetSmokeTrackerConfig, PIDNetSmokeImpactDetector
 from boom.detection.optical_flow import DetectorConfig, InstantSmokeDustDetector
-from boom.detection.fusion import OpticalPIDNetFusionConfig, OpticalPIDNetFusionDetector
 from boom.detection.yolo import YOLOSmokeDetectorConfig, YOLOSmokeImpactDetector
 from boom.config.defaults import (
     CLOSE_ITERATIONS, CLOSE_KERNEL_SIZE, CONFIRMATION_HITS_REQUIRED,
@@ -27,8 +25,7 @@ from boom.config.defaults import (
     MAX_MISSED_FRAMES, MIN_BLOB_AREA, MIN_CANDIDATE_FIELD_SPAN_RATIO,
     MIN_CANDIDATE_FILL_RATIO, MIN_CONFIRM_AREA, MIN_DIMENSION_GROWTH_RATIO,
     MIN_GROWTH_RATIO, MIN_RESIDUAL_POLARITY_RATIO, MIN_RESIDUAL_SIGNED_COHERENCE,
-    OPEN_KERNEL_SIZE, PIDNET_CONFIRMATION_HITS, PIDNET_EARLY_CANDIDATE_MIN_AREA,
-    PIDNET_MIN_COMPONENT_AREA, PIDNET_MIN_CONFIRMATION_CONFIDENCE,
+    OPEN_KERNEL_SIZE,
     POST_EVENT_MATCH_DISTANCE, POST_EVENT_MEMORY_IDLE_SEC, POST_EVENT_MEMORY_MAX_SEC,
     POST_EVENT_RETRIGGER_MIN_AREA, POST_EVENT_RETRIGGER_MIN_GROWTH_RATIO,
     POST_EVENT_SPATIAL_HISTORY_SEC, POST_EVENT_TRAJECTORY_DISTANCE,
@@ -95,37 +92,6 @@ def build_detector_config() -> DetectorConfig:
     )
 
 
-def build_pidnet_detector_config(args: argparse.Namespace) -> PIDNetSmokeTrackerConfig:
-    debug_mode = UI_MODE.lower() == "debug"
-    return PIDNetSmokeTrackerConfig(
-        model_path=args.model_path,
-        device=args.device,
-        input_width=args.model_width,
-        input_height=args.model_height,
-        inference_stride=max(args.inference_stride, 1),
-        segmentation_threshold=args.seg_threshold,
-        early_candidate_threshold=args.early_seg_threshold,
-        min_component_area=PIDNET_MIN_COMPONENT_AREA,
-        early_candidate_min_area=PIDNET_EARLY_CANDIDATE_MIN_AREA,
-        warmup_sec=args.warmup_sec,
-        new_smoke_window_sec=args.new_smoke_window_sec,
-        confirmation_hits=PIDNET_CONFIRMATION_HITS,
-        min_confirmation_confidence=PIDNET_MIN_CONFIRMATION_CONFIDENCE,
-        track_match_distance=TRACK_MATCH_DISTANCE,
-        post_event_memory_sec=POST_EVENT_MEMORY_MAX_SEC,
-        show_status_overlay=debug_mode,
-        show_candidate_boxes=SHOW_CANDIDATE_BOXES if debug_mode else False,
-    )
-
-
-def build_fusion_config(args: argparse.Namespace) -> OpticalPIDNetFusionConfig:
-    return OpticalPIDNetFusionConfig(
-        confirmation_window_sec=max(args.fusion_window_sec, 0.01),
-        match_distance_px=max(args.fusion_match_distance, 1.0),
-        draw_pending_candidates=True,
-    )
-
-
 def build_yolo_detector_config(args: argparse.Namespace) -> YOLOSmokeDetectorConfig:
     model_path = getattr(args, "yolo_model_path", None) or getattr(args, "model_path", YOLO_MODEL_PATH)
     conf = getattr(args, "yolo_conf", YOLO_CONF_THRESHOLD)
@@ -139,11 +105,12 @@ def build_yolo_detector_config(args: argparse.Namespace) -> YOLOSmokeDetectorCon
     return YOLOSmokeDetectorConfig(
         model_path=model_path,
         device=device,
+        precision=getattr(args, "precision", "fp32"),
         input_size=imgsz,
         conf_threshold=conf,
         iou_threshold=iou,
         inference_stride=max(stride, 1),
-        target_classes=YOLO_TARGET_CLASSES,
+        target_classes=tuple(getattr(args, "yolo_target_classes", None) or YOLO_TARGET_CLASSES),
         confirmation_hits=hits,
         track_match_distance=match_dist,
         max_missed_sec=max_missed,
@@ -161,7 +128,7 @@ def create_detector(
     """
     建立煙霧偵測器。
 
-    :param detector_or_args: 偵測器型別字串 ("pidnet", "motion", "fusion", "yolo") 或含 .detector 的 Namespace 物件
+    :param detector_or_args: 偵測器型別字串 ("motion", "yolo") 或含 .detector 的 Namespace 物件
     :param fps: 影像來源之影格率
     :param config: 對應演算法之設定物件 (可選)
     :param kwargs: 額外參數覆寫
@@ -170,17 +137,7 @@ def create_detector(
     if hasattr(detector_or_args, "detector"):
         args = detector_or_args
         d_type = str(args.detector).lower().strip()
-        if d_type == "pidnet":
-            cfg = build_pidnet_detector_config(args)
-            return PIDNetSmokeImpactDetector(cfg, fps)
-        elif d_type == "fusion":
-            return OpticalPIDNetFusionDetector(
-                build_detector_config(),
-                build_pidnet_detector_config(args),
-                fps,
-                build_fusion_config(args),
-            )
-        elif d_type == "motion":
+        if d_type == "motion":
             return InstantSmokeDustDetector(build_detector_config(), fps)
         elif d_type in ("yolo", "yolo-seg", "yolov8", "yolov11", "yolo26"):
             cfg = build_yolo_detector_config(args)
@@ -190,28 +147,12 @@ def create_detector(
 
     d_type = str(detector_or_args).lower().strip()
 
-    if d_type == "pidnet":
-        if config is None or not isinstance(config, PIDNetSmokeTrackerConfig):
-            cfg = PIDNetSmokeTrackerConfig(**kwargs) if kwargs else PIDNetSmokeTrackerConfig()
-        else:
-            cfg = config
-        return PIDNetSmokeImpactDetector(cfg, fps)
-
-    elif d_type == "motion":
+    if d_type == "motion":
         if config is None or not isinstance(config, DetectorConfig):
             cfg = DetectorConfig(**kwargs) if kwargs else DetectorConfig()
         else:
             cfg = config
         return InstantSmokeDustDetector(cfg, fps)
-
-    elif d_type == "fusion":
-        optical_cfg = kwargs.get("optical_config") or DetectorConfig()
-        pidnet_cfg = kwargs.get("pidnet_config") or PIDNetSmokeTrackerConfig()
-        if config is not None and isinstance(config, OpticalPIDNetFusionConfig):
-            fusion_cfg = config
-        else:
-            fusion_cfg = kwargs.get("fusion_config") or OpticalPIDNetFusionConfig()
-        return OpticalPIDNetFusionDetector(optical_cfg, pidnet_cfg, fps, fusion_cfg)
 
     elif d_type in ("yolo", "yolo-seg", "yolov8", "yolov11", "yolo26"):
         if config is None or not isinstance(config, YOLOSmokeDetectorConfig):
@@ -222,5 +163,5 @@ def create_detector(
 
     else:
         raise ValueError(
-            f"Unsupported detector type: '{detector_or_args}'. Supported: 'pidnet', 'motion', 'fusion', 'yolo'"
+            f"Unsupported detector type: '{detector_or_args}'. Supported: 'motion', 'yolo'"
         )

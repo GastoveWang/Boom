@@ -9,7 +9,7 @@ Boom 離線執行期 - 輸出目錄解析與座標日誌寫入 (output.py)
 
 【核心功能】
 1. 非覆蓋目錄命名 (`resolve_output_paths`)：
-   - 遵循 `<video_stem>_<method>_<nn>` 命名格式（例如 `DJI_001_V_pidnet_01`），
+   - 遵循 `<video_stem>_<method>_<nn>` 命名格式（例如 `DJI_001_V_yolo_02`），
      自動遞增序號，絕對不覆蓋使用者既有實驗與推論結果。
 2. 視訊寫入器包裝 (`VideoOutput`)：
    - 延遲初始化 `cv2.VideoWriter`（以首格畫面動態獲取寬高），支援 mp4v 編碼。
@@ -43,9 +43,7 @@ def resolve_output_paths(
     """Return paths in a method-labelled folder without overwriting prior runs."""
     root = OUTPUT_ROOT if output_root is None else output_root
     method_names = {
-        "pidnet": "pidnet",
         "motion": "optical_flow",
-        "fusion": "optical_pidnet",
     }
     method_name = method_names.get(detector_name, detector_name)
     folder_stem = f"{video_stem}_{method_name}"

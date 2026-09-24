@@ -10,7 +10,7 @@ Boom - 無人機荒野煙霧即時偵測與定位系統 (Boom Core Package)
 - `interfaces`: 演算法標準契約（Detector, Matcher, Localizer, Sensor）
 - `core`: 大地幾何坐標數學轉換與通用事件資料類別
 - `config`: 系統強型別配置定義與 YAML 載入器
-- `detection`: 煙霧偵測演算法（PIDNet, 光流, 兩階段融合）
+- `detection`: 煙霧偵測演算法（YOLO、光流）
 - `localization`: 無人機姿態追蹤 (VO) 與地面單應性投影
 - `mapping`: GeoTIFF 航拍空拍圖資索引與 ROI 提取
 - `matching`: 特徵提取與比對後端（LightGlue, SIFT, ORB）

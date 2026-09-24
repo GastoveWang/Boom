@@ -11,7 +11,7 @@ Boom 離線管線 - 光流動態煙霧偵測入口 (optical_flow_pipeline.py)
 - `main(argv=None)`: 鎖定 detector="motion" 並調用 `pipelines.main._run_pipeline`。
 
 【使用範例】
-python artillery/offline/src/pipelines/optical_flow_pipeline.py --video data/0603/DJI_001_V.MP4 --display
+python run_offline.py motion --video data/video/example.mp4 --no-map --display
 ==============================================================================
 """
 

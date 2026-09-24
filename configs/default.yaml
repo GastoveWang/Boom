@@ -5,15 +5,13 @@
 system:
   project_name: "Boom"
   seed: 42
-  device: "auto"  # "auto", "cpu", "cuda"
-  output_root: "outputs"
+  device: "auto" # "auto", "cpu", "cuda"
+  output_root: "output"
   log_level: "INFO"
 
 paths:
   map_root: "asset/maps"
   drone_icon: "asset/pictures/drone.png"
-  pidnet_model: "models/pretrained/sam_sup_pidnet_s.pt"
-  pidnet_fallback_model: "artillery/offline/model/sam_sup_pidnet_s.pt"
   yolo_model: "models/checkpoints/boom_v1_yolo26m-seg.onnx"
 
 ui:
@@ -38,27 +36,15 @@ pipeline:
   stride_frames: 2
 
 detector:
-  backend: "pidnet"  # "pidnet", "motion", "fusion", "yolo"
+  backend: "motion" # "motion", "yolo"
 
   yolo:
-    model_path: "models/checkpoints/boom_v1_yolo26m-seg.onnx"
+    model_path: "models/checkpoints/yolo26m.onnx"
     input_size: 640
     conf_threshold: 0.25
     iou_threshold: 0.45
-    target_classes: ["boom"]
+    target_classes: ["person"]
     confirmation_hits: 2
-
-  pidnet:
-    input_width: 960
-    input_height: 544
-    threshold: 0.80
-    early_candidate_threshold: 0.45
-    min_component_area: 30
-    early_candidate_min_area: 10
-    warmup_sec: 0.50
-    new_smoke_window_sec: 1.0
-    confirmation_hits: 2
-    min_confirmation_confidence: 0.72
 
   motion:
     diff_interval_sec: 0.12
@@ -104,17 +90,13 @@ detector:
     split_blob_area: 2500.0
     enable_radial_flow_check: true
 
-  fusion:
-    confirmation_window_sec: 1.0
-    match_distance_px: 220.0
-
 matching:
   search_radius_m: 1000.0
   max_candidates: 9
   roi_size_m: 1000.0
   max_image_size: 1600
   max_features: 2048
-  matcher_backend: "superpoint_lightglue"  # "superpoint_lightglue", "sift"
+  matcher_backend: "superpoint_lightglue" # "superpoint_lightglue", "sift"
   device: "auto"
   lightglue_filter_threshold: 0.1
   ratio_threshold: 0.70

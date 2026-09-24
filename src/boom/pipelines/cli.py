@@ -11,7 +11,7 @@ Boom 離線管線 - 命令列參數解析與合法性校驗 (cli.py)
 【核心功能】
 1. 完整 CLI 參數解析器構建 (`build_arg_parser`)：
    - 支援 `--video`, `--reference-image`, `--map-dir`, `--no-map`, `--display`。
-   - 支援演算法切換 (`--detector [pidnet|motion|fusion]`) 及各模型專屬超參數。
+   - 支援演算法切換 (`--detector [motion|yolo]`) 及各模型專屬超參數。
    - 支援航拍圖資匹配參數（搜尋半徑、特徵數量、RANSAC 門檻等）。
 2. 參數合法性校驗 (`validate_args`)：
    - 檢查數值範圍（如各項門檻必須在 (0, 1) 間、尺寸與時窗不得為負數等）。
@@ -20,7 +20,7 @@ Boom 離線管線 - 命令列參數解析與合法性校驗 (cli.py)
 
 【相依模組】
 - 上游：被 `pipelines/main.py`, `run_offline.py`, `offline/__main__.py` 調用。
-- 下游：使用 `artillery.common.defaults` 中的常數與設定類別。
+- 下游：使用 `boom.config.defaults` 中的常數與設定類別。
 ==============================================================================
 """
 from __future__ import annotations
@@ -28,17 +28,7 @@ from __future__ import annotations
 from boom.config.defaults import CONFIRMED_BOX_HOLD_SEC
 from boom.config.defaults import DETECTOR_BACKEND
 from boom.config.defaults import DISPLAY_SECONDS
-from boom.config.defaults import FUSION_CONFIRMATION_WINDOW_SEC
-from boom.config.defaults import FUSION_MATCH_DISTANCE_PX
 from boom.config.defaults import MAX_FRAMES
-from boom.config.defaults import NEW_SMOKE_WINDOW_SEC
-from boom.config.defaults import PIDNET_DEVICE
-from boom.config.defaults import PIDNET_EARLY_CANDIDATE_THRESHOLD
-from boom.config.defaults import PIDNET_INPUT_HEIGHT
-from boom.config.defaults import PIDNET_INPUT_WIDTH
-from boom.config.defaults import PIDNET_MODEL_PATH
-from boom.config.defaults import PIDNET_THRESHOLD
-from boom.config.defaults import PIDNET_WARMUP_SEC
 from boom.config.defaults import MAP_ROOT
 from boom.config.defaults import DRONE_ICON_PATH
 from boom.config.defaults import START_FRAME
@@ -59,14 +49,12 @@ def build_arg_parser(
     allow_detector_selection: bool = True,
 ) -> argparse.ArgumentParser:
     algorithm_names = {
-        "pidnet": "PIDNet-S",
         "motion": "optical flow",
-        "fusion": "optical-flow onset plus PIDNet confirmation",
         "yolo": "YOLO (boom detection)",
     }
     algorithm_name = algorithm_names.get(default_detector, default_detector)
     parser = argparse.ArgumentParser(
-        description=f"Offline artillery-impact detection using {algorithm_name}."
+        description=f"Offline wilderness smoke detection using {algorithm_name}."
     )
     parser.add_argument("--video", type=Path,
                         help="Input video; defaults to the first video under data/.")
@@ -101,6 +89,12 @@ def build_arg_parser(
     parser.add_argument("--allow-gps-seed", action="store_true",
                         help="Allow explicitly provisional GPS-photo VO if photo/map visual matching fails.")
     parser.add_argument("--drone-icon", type=Path, default=DRONE_ICON_PATH)
+    parser.add_argument("--precision", choices=("fp32", "fp16"), default="fp32",
+                        help="Neural inference precision; opt-in fp16 for CUDA (CPU uses fp32).")
+    parser.add_argument("--writer-queue", type=int, default=2,
+                        help="Bounded background encoding queue; 0 disables it. No frames dropped.")
+    parser.add_argument("--display-width", type=int, default=1280,
+                        help="Maximum preview width; 0 uses full resolution. Saved video is unchanged.")
     parser.add_argument("--display", action="store_true", help="Show the processed video and map window.")
     parser.add_argument("--start-frame", type=int, default=START_FRAME)
     parser.add_argument("--max-frames", type=int, default=MAX_FRAMES)
@@ -109,45 +103,16 @@ def build_arg_parser(
     if allow_detector_selection:
         parser.add_argument(
             "--detector",
-            choices=("pidnet", "motion", "fusion", "yolo"),
+            choices=("motion", "yolo"),
             default=default_detector,
-            help="Select PIDNet-S, optical flow, staged fusion, or YOLO.",
+            help="Select optical flow or YOLO.",
         )
     else:
         parser.set_defaults(detector=default_detector)
-    if allow_detector_selection or default_detector in ("pidnet", "fusion"):
-        parser.add_argument("--model-path", type=Path, default=PIDNET_MODEL_PATH)
-        parser.add_argument(
-            "--device", choices=("auto", "cpu", "cuda"), default=PIDNET_DEVICE
-        )
-        parser.add_argument("--seg-threshold", type=float, default=PIDNET_THRESHOLD)
-        parser.add_argument(
-            "--early-seg-threshold",
-            type=float,
-            default=PIDNET_EARLY_CANDIDATE_THRESHOLD,
-            help="PIDNet-only weak-smoke threshold used to preserve onset time.",
-        )
-        parser.add_argument("--model-width", type=int, default=PIDNET_INPUT_WIDTH)
-        parser.add_argument("--model-height", type=int, default=PIDNET_INPUT_HEIGHT)
-        parser.add_argument("--inference-stride", type=int, default=1)
-        parser.add_argument(
-            "--new-smoke-window-sec", type=float, default=NEW_SMOKE_WINDOW_SEC
-        )
-        parser.add_argument("--warmup-sec", type=float, default=PIDNET_WARMUP_SEC)
-    if allow_detector_selection or default_detector == "fusion":
-        parser.add_argument(
-            "--fusion-window-sec",
-            type=float,
-            default=FUSION_CONFIRMATION_WINDOW_SEC,
-            help="Maximum delay from optical onset to PIDNet confirmation.",
-        )
-        parser.add_argument(
-            "--fusion-match-distance",
-            type=float,
-            default=FUSION_MATCH_DISTANCE_PX,
-            help="Maximum optical/PIDNet impact-point distance in source pixels.",
-        )
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto",
+                        help="YOLO inference device (default: auto).")
     if allow_detector_selection or default_detector == "yolo":
+        parser.add_argument("--inference-stride", type=int, default=1)
         parser.add_argument(
             "--yolo-model-path",
             type=Path,
@@ -173,6 +138,12 @@ def build_arg_parser(
             help="YOLO input image size (default: 640).",
         )
         parser.add_argument(
+            "--yolo-target-classes",
+            nargs="+",
+            metavar="CLASS",
+            help="Model class names to detect, e.g. person car; defaults to boom.",
+        )
+        parser.add_argument(
             "--yolo-track-match-distance",
             type=float,
             default=140.0,
@@ -190,29 +161,14 @@ def build_arg_parser(
 
 
 def validate_args(args):
+    if args.writer_queue < 0 or args.display_width < 0:
+        raise ValueError("writer-queue and display-width must be nonnegative")
     map_matching_config(args)
     if args.box_hold_sec < 0 or args.panel_hold_sec < 0:
         raise ValueError("hold durations cannot be negative")
-    if args.detector in ("pidnet", "fusion"):
-        if not 0.0 < args.seg_threshold < 1.0:
-            raise ValueError("--seg-threshold must be between 0 and 1")
-        if not 0.0 < args.early_seg_threshold <= args.seg_threshold:
-            raise ValueError(
-                "--early-seg-threshold must be positive and no greater than --seg-threshold"
-            )
-        if args.new_smoke_window_sec <= 0:
-            raise ValueError("--new-smoke-window-sec must be positive")
-        if args.warmup_sec < 0:
-            raise ValueError("--warmup-sec cannot be negative")
-        if args.model_width <= 0 or args.model_height <= 0 or args.inference_stride <= 0:
-            raise ValueError(
-                "model dimensions and --inference-stride must be positive")
-    if args.detector == "fusion":
-        if args.fusion_window_sec <= 0:
-            raise ValueError("--fusion-window-sec must be positive")
-        if args.fusion_match_distance <= 0:
-            raise ValueError("--fusion-match-distance must be positive")
     if args.detector == "yolo":
+        if args.inference_stride <= 0:
+            raise ValueError("--inference-stride must be positive")
         if hasattr(args, "yolo_conf") and not 0.0 < args.yolo_conf <= 1.0:
             raise ValueError("--yolo-conf must be in (0, 1]")
         if hasattr(args, "yolo_iou") and not 0.0 < args.yolo_iou <= 1.0:
