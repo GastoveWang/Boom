@@ -1,0 +1,14 @@
+ui:
+  mode: "client"
+  display_scale: 0.5
+  display_seconds: 10.0
+  no_display: true
+  panel_width: 500
+  show_candidate_boxes: true
+  draw_debug_tiles: false
+  font_paths:
+    - "/System/Library/Fonts/PingFang.ttc"
+    - "/System/Library/Fonts/STHeiti Medium.ttc"
+    - "C:/Windows/Fonts/msjh.ttc"
+    - "C:/Windows/Fonts/msjhbd.ttc"
+    - "C:/Windows/Fonts/mingliu.ttc"

@@ -1,0 +1,5 @@
+pipeline:
+  start_frame: 0
+  max_frames: -1
+  downscale: 0.7
+  stride_frames: 2

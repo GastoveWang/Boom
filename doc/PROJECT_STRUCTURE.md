@@ -17,7 +17,7 @@ Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統，目
 Boom/
 ├── run_offline.py                  # 離線影片入口
 ├── run_realtime.py                 # Spinnaker 相機入口
-├── configs/default.yaml           # 系統設定
+├── configs/                        # 分類設定（見 configs/README.md）
 ├── doc/                            # Boom 文件
 ├── benchmark/                      # 碩論比較用的其他專案
 ├── src/boom/

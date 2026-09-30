@@ -15,7 +15,18 @@ from typing import Any, Dict, Optional
 import yaml
 
 
-_DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "default.yaml"
+_CONFIG_DIR = Path(__file__).resolve().parents[3] / "configs"
+_DEFAULT_CONFIG_PATH = _CONFIG_DIR / "default.yaml"
+_CONFIG_PARTS = (
+    "system.yaml",
+    "ui.yaml",
+    "pipeline.yaml",
+    "detector.yaml",
+    "detector-yolo.yaml",
+    "detector-motion.yaml",
+    "matching.yaml",
+    "localization.yaml",
+)
 
 
 def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
@@ -37,9 +48,10 @@ def load_config(config_path: Optional[str | Path] = None) -> Dict[str, Any]:
     :return: 包含完整參數的巢狀字典
     """
     cfg: Dict[str, Any] = {}
-    if _DEFAULT_CONFIG_PATH.exists():
-        with open(_DEFAULT_CONFIG_PATH, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
+    for path in (*(_CONFIG_DIR / name for name in _CONFIG_PARTS), _DEFAULT_CONFIG_PATH):
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                cfg = _deep_merge(cfg, yaml.safe_load(f) or {})
 
     if config_path:
         custom_p = Path(config_path)

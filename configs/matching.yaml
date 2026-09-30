@@ -1,0 +1,20 @@
+matching:
+  search_radius_m: 1000.0
+  max_candidates: 9
+  roi_size_m: 1000.0
+  max_image_size: 1600
+  max_features: 2048
+  matcher_backend: "edm" # "edm" (default), "superpoint_lightglue", "sift"
+  device: "auto"
+  lightglue_filter_threshold: 0.1
+  edm_model_path: "models/pretrained/edm_w640_h480_topk1680.onnx" # Official fixed 640x480 ONNX model
+  edm_conf_threshold: 0.2 # Coarse match confidence threshold
+  edm_sigma_threshold: 0.000001 # Fine match score threshold
+  ratio_threshold: 0.70
+  ransac_threshold_px: 3.0
+  min_inliers: 16
+  min_inlier_ratio: 0.35
+  max_reprojection_error_px: 2.5
+  min_coverage: 0.02
+  cache_entries: 9
+  debug: false

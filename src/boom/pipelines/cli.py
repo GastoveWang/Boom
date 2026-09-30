@@ -33,6 +33,7 @@ from boom.config.defaults import MAP_ROOT
 from boom.config.defaults import DRONE_ICON_PATH
 from boom.config.defaults import START_FRAME
 from boom.config.defaults import MapMatchingConfig
+from boom.config.loader import get_config
 from boom.config.defaults import (
     YOLO_MODEL_PATH,
     YOLO_CONF_THRESHOLD,
@@ -68,12 +69,17 @@ def build_arg_parser(
     parser.set_defaults(map_dir=MAP_ROOT)
     parser.add_argument("--map-mpp", type=float, default=0.75,
                         help="Map preview metres per pixel (default: 0.75).")
-    defaults = MapMatchingConfig()
-    parser.add_argument("--map-matcher-backend", choices=("superpoint_lightglue", "sift"),
+    defaults = MapMatchingConfig(**get_config().get("matching", {}))
+    parser.add_argument("--map-matcher-backend", choices=("superpoint_lightglue", "edm", "sift"),
                         default=defaults.matcher_backend)
     parser.add_argument("--map-device", choices=("auto", "cpu", "cuda"), default=defaults.device)
     parser.add_argument("--map-lightglue-filter-threshold", type=float,
                         default=defaults.lightglue_filter_threshold)
+    parser.add_argument("--map-edm-model-path", default=defaults.edm_model_path)
+    parser.add_argument("--map-edm-conf-threshold", type=float,
+                        default=defaults.edm_conf_threshold)
+    parser.add_argument("--map-edm-sigma-threshold", type=float,
+                        default=defaults.edm_sigma_threshold)
     for name, value_type in (("search_radius_m", float), ("max_candidates", int),
                              ("roi_size_m", float), ("max_image_size", int),
                              ("max_features", int), ("ratio_threshold", float),

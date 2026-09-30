@@ -29,6 +29,7 @@ import cv2
 import numpy as np
 
 from boom.core.events import ConfirmedEvent
+from boom.config.defaults import YOLO_MODEL_PATH, YOLO_TARGET_CLASSES
 from boom.interfaces.detector import BaseSmokeDetector
 
 BBox = Tuple[int, int, int, int]
@@ -40,10 +41,7 @@ class YOLOSmokeDetectorConfig:
     """YOLO 煙霧/起爆偵測器設定參數"""
 
     model_path: Union[str, Path] = field(
-        default_factory=lambda: Path(__file__).resolve().parents[3]
-        / "models"
-        / "checkpoints"
-        / "boom_v1_yolo26m-seg.onnx"
+        default_factory=lambda: YOLO_MODEL_PATH
     )
     device: str = "auto"
     precision: str = "fp32"
@@ -53,7 +51,7 @@ class YOLOSmokeDetectorConfig:
     inference_stride: int = 1
 
     # 目標類別清單：依使用者需求，預設只判斷 "boom"
-    target_classes: Tuple[str, ...] = ("boom",)
+    target_classes: Tuple[str, ...] = field(default_factory=lambda: YOLO_TARGET_CLASSES)
 
     # 追蹤與時序確認參數
     confirmation_hits: int = 2

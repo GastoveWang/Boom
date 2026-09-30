@@ -1,0 +1,8 @@
+localization:
+  mpp: 0.75
+  map_span_m: 1100.0
+  allow_gps_seed: false
+  default_drone_pose:
+    yaw: 0.0
+    pitch: 20.0
+    roll: 0.0

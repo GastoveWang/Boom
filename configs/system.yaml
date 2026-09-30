@@ -1,0 +1,10 @@
+system:
+  project_name: "Boom"
+  seed: 42
+  device: "auto" # "auto", "cpu", "cuda"
+  output_root: "output"
+  log_level: "INFO"
+
+paths:
+  map_root: "asset/maps"
+  drone_icon: "asset/pictures/drone.png"

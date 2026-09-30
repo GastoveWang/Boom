@@ -11,7 +11,7 @@ Boom 航拍定位 - 局部 ROI 地圖特徵比對與品質驗證 (nearby.py)
 1. 局部航拍 ROI 提取：
    - 根據無人機位置與搜尋半徑，從 GeoTIFF 圖資中僅擷取感興趣區域（ROI），避免載入整張巨大地圖。
 2. 特徵匹配與幾何品質檢核 (`NearbyMapLocalizer`)：
-   - 調用 SuperPoint + LightGlue 或 SIFT 進行特徵比對。
+   - 調用 EDM、SuperPoint + LightGlue 或 SIFT 進行特徵比對。
    - 計算 RANSAC 單應性變換矩陣，驗證內點數量 (`min_inliers`)、內點比例 (`min_inlier_ratio`)、
      重投影誤差 (`max_reprojection_error_px`) 與視角覆蓋率 (`min_coverage`)。
 3. 像素到 GPS 映射 (`MapMatchResult`)：
@@ -76,7 +76,7 @@ class MapMatchResult:
 class NearbyMapLocalizer:
     """Initialize once; reuse index, extractor, matcher and bounded ROI cache.
 
-    SuperPoint + LightGlue is the default. OpenCV injections retain the legacy
+    EDM is the default. OpenCV injections retain the legacy
     test/extension contract. All registration paths share this backend.
     """
 

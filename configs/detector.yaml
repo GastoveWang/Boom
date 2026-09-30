@@ -1,0 +1,2 @@
+detector:
+  backend: "motion" # "motion", "yolo"

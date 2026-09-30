@@ -45,7 +45,7 @@ submap 以資料夾分組；遠近使用 TIFF 地理 bounds 判定，不使用�
 1. 讀 GPS 照片 EXIF 與 DJI XMP，建立 GPS 起點、近似內參與地面平面。
 2. 載入最近 submap 內所有 GeoTIFF 的完整地理範圍，依各圖 CRS／affine 合成完整 UI 地圖，
    保留 alpha/nodata 有效區域；定位另外依粗 GPS 選附近 ROI，使用 pyproj 做座標轉換。
-3. 照片與選中 submap 內各 ROI 做 SuperPoint + LightGlue／RANSAC 匹配，
+3. 照片與選中 submap 內各 ROI 做 EDM（可切換 SuperPoint + LightGlue）／RANSAC 匹配，
    依 inlier 數／比例、重投影誤差與空間分布驗證，再以 PnP／平面 IPPE 驗證相機姿態，
    得到正北 0°、順時針增加的無人機朝向（相機與機頭一致）。直接匹配失敗時保留依照片姿態校正斜拍的流程，
    從完整地圖裁出附近候選 ROI，使用相同幾何品質門檻，不匹配全部地圖。
@@ -109,5 +109,46 @@ GPS 暫估的成功追蹤率不能代表地圖匹配成功率。
 先前 SIFT 版本的 0603 資料照片對地圖匹配未通過品質門檻。當時照片對影片匹配可用，
 因此 GPS 暫估模式可驗證 VO 與標點流程；**地圖視覺校正與真實定位誤差仍未驗證**。
 
-目前預設 matcher 已改為 SuperPoint + LightGlue，不能沿用上述舊版結果評估新 matcher。
-實際 CUDA 模型與合成朝向測試已通過；真實飛行地面真值驗證仍待進行。
+目前預設 matcher 為 EDM；上述 SIFT 舊版結果不能直接用來評估 EDM。
+先前 SuperPoint + LightGlue 的 CUDA 模型與合成朝向測試已通過；EDM 與真實飛行地面真值仍待驗證。
+
+## EDM 與 SuperPoint + LightGlue 對標
+
+地圖定位的匹配後端可用 `--map-matcher-backend` 切換；預設為 `edm`，
+SuperPoint + LightGlue 仍可用 `superpoint_lightglue` 選擇。EDM 使用
+[EDM 官方專案](https://github.com/chicleee/EDM)
+提供的固定尺寸雙向 refinement ONNX 模型。從官方 README 連結的
+[權重資料夾](https://drive.google.com/drive/folders/1PkYNihwgnNwqQeeewBz4OUDrvY8xFdH0?usp=sharing)下載
+`edm_w640_h480_topk1680.onnx` 放在 `models/pretrained/`，或透過
+`--map-edm-model-path` 指定實際位置。模型檔不會納入 Git。
+
+```powershell
+python -m pip install -e ".[geo,ml,onnx-gpu]"
+python -m pip install onnxruntime-gpu==1.23.2 nvidia-cudnn-cu12==9.10.2.21
+python -m pip install git+https://github.com/cvg/LightGlue.git
+python run_offline.py motion --video data/video/example.mp4 --reference-image asset/pictures/reference.jpg
+python run_offline.py motion --video data/video/example.mp4 --reference-image asset/pictures/reference.jpg --map-matcher-backend superpoint_lightglue
+```
+
+CPU 環境可改裝 `.[geo,ml,onnx]` 並指定 `--map-device cpu`。EDM 將每張
+輸入影像縮至模型固定尺寸後，以與 OpenCV resize 一致的像素中心座標轉回
+原圖，並在原圖座標套用 ROI mask。輸出的對應點繼續共用現有 RANSAC、
+定位品質門檻與除錯圖。可用 `--map-edm-conf-threshold` 和
+`--map-edm-sigma-threshold` 調整官方示範中的篩選門檻。
+
+Windows GPU 環境需有 CUDA 12.8 與 CUDA 12 版 cuDNN 9。Boom 的 EDM 後端
+會從 `nvidia-cudnn-cu12` 套件預先載入 cuDNN；即使同一 Python 環境的
+PyTorch 使用 CUDA 13，也不會拿其 cuDNN 給 CUDA 12 版 ONNX Runtime。
+若明確指定 `--map-device cuda` 而 CUDA provider 無法載入，程式會報錯；
+`auto` 則會警告並使用 CPU。首次 GPU 推論包含初始化，衡量延遲前應先暖機。
+
+對同一組影像執行兩種後端並查看匹配數、RANSAC 內點、重投影誤差和
+推論耗時：
+
+```powershell
+python tools/benchmark_matchers.py path/to/photo.jpg path/to/map_roi.jpg --edm-model-path models/pretrained/edm_w640_h480_topk1680.onnx --device cuda
+```
+
+這個快速比較把兩張圖都縮至 640×480。RANSAC 內點和重投影誤差只量測
+幾何一致性，無法單獨證明地面定位準確度；正式對標仍需用相同 UAV／地圖
+樣本與已知真值統計定位成功率、定位誤差、誤匹配和端到端延遲。

@@ -4,10 +4,11 @@ Boom 航拍定位 - 特徵點提取與比對後端 (feature_matching.py)
 ==============================================================================
 
 【檔案定位】
-本檔案提供統一抽象的特徵匹配後端介面。支援深度學習 SuperPoint + LightGlue
-高精度比對後端，以及經典 SIFT 特徵比對後端。
+本檔案提供統一抽象的特徵匹配後端介面。支援 EDM、SuperPoint + LightGlue
+及經典 SIFT 特徵比對後端。
 
 【核心後端】
+- `EDMBackend`: 固定尺寸 ONNX 雙圖匹配後端，為地圖匹配預設選項。
 - `SuperPointLightGlueBackend`: 採用深度神經網路進行特徵點提取與圖神經網路匹配，具備極佳的視角與光照變化穩健性。
 - `SIFTBackend`: 基於 OpenCV SIFT 的傳統特徵比對後端。
 - `create_feature_backend(config)`: 工廠函式，依據設定建立匹配後端實例。
@@ -87,4 +88,7 @@ class SuperPointLightGlueBackend:
 def create_feature_backend(config, extractor=None, matcher=None):
     if extractor is not None or matcher is not None or config.matcher_backend == "sift":
         return SIFTBackend(config, extractor, matcher)
+    if config.matcher_backend == "edm":
+        from .edm_matching import EDMBackend
+        return EDMBackend(config)
     return SuperPointLightGlueBackend(config)

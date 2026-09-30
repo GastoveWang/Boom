@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
 import math
+from .loader import get_config
 
 
 @dataclass(frozen=True)
@@ -14,9 +15,12 @@ class MapMatchingConfig:
     roi_size_m: float = 1000.0
     max_image_size: int = 1600
     max_features: int = 2048
-    matcher_backend: str = "superpoint_lightglue"
+    matcher_backend: str = "edm"
     device: str = "auto"
     lightglue_filter_threshold: float = 0.1
+    edm_model_path: str = "models/pretrained/edm_w640_h480_topk1680.onnx"
+    edm_conf_threshold: float = 0.2
+    edm_sigma_threshold: float = 1e-6
     ratio_threshold: float = 0.70
     ransac_threshold_px: float = 3.0
     min_inliers: int = 16
@@ -27,12 +31,18 @@ class MapMatchingConfig:
     debug: bool = False
 
     def __post_init__(self):
-        if self.matcher_backend not in ("superpoint_lightglue", "sift"):
+        if self.matcher_backend not in ("superpoint_lightglue", "edm", "sift"):
             raise ValueError("Unsupported map matcher_backend")
         if self.device not in ("auto", "cpu", "cuda"):
             raise ValueError("Map matcher device must be auto, cpu or cuda")
         if not 0 <= self.lightglue_filter_threshold <= 1:
             raise ValueError("lightglue_filter_threshold must be in [0, 1]")
+        if not 0 <= self.edm_conf_threshold <= 1:
+            raise ValueError("edm_conf_threshold must be in [0, 1]")
+        if not 0 <= self.edm_sigma_threshold <= 1:
+            raise ValueError("edm_sigma_threshold must be in [0, 1]")
+        if self.matcher_backend == "edm" and not self.edm_model_path:
+            raise ValueError("edm_model_path is required")
         for name in ("search_radius_m", "roi_size_m", "ransac_threshold_px",
                      "max_reprojection_error_px"):
             value = getattr(self, name)
@@ -123,12 +133,12 @@ SHOW_CANDIDATE_BOXES = True
 DETECTOR_BACKEND = "motion"
 
 # YOLO instance segmentation / object detection for boom events
-YOLO_MODEL_PATH = PROJECT_ROOT / "models" / "checkpoints" / "boom_v1_yolo26m-seg.onnx"
+YOLO_MODEL_PATH = PROJECT_ROOT / get_config()["detector"]["yolo"]["model_path"]
 YOLO_DEVICE = "auto"
 YOLO_INPUT_SIZE = 640
 YOLO_CONF_THRESHOLD = 0.50
 YOLO_IOU_THRESHOLD = 0.45
-YOLO_TARGET_CLASSES = ("boom",)
+YOLO_TARGET_CLASSES = tuple(get_config()["detector"]["yolo"]["target_classes"])
 YOLO_CONFIRMATION_HITS = 2
 YOLO_TRACK_MAX_MISSED_SEC = 2.0
 YOLO_TRACK_MATCH_DISTANCE = 140.0
