@@ -1,3 +1,5 @@
+# 檔案功能：固定尺寸 EDM ONNX 影像對匹配後端。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """EDM's fixed-size ONNX pair matcher adapted to Boom's feature backend API.
 
 The model and postprocessing follow chicleee/EDM/deploy/run_onnx.py. EDM

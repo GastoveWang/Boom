@@ -1,3 +1,5 @@
+# 檔案功能：影像變化、相機運動補償、光流與煙塵候選事件追蹤。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 from __future__ import annotations
 from collections import deque
 import math

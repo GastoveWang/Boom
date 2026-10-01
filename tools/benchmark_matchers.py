@@ -1,3 +1,5 @@
+# 檔案功能：同影像對比較 EDM 與 SuperPoint/LightGlue 的匹配表現。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """Compare Boom's SuperPoint+LightGlue and EDM on the same image pair.
 
 Run from the repository root after installing Boom and the optional runtimes.

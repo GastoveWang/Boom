@@ -1,3 +1,5 @@
+# 檔案功能：PySpin 相機設定、取像與最新影格執行緒。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """Low-latency FLIR/Teledyne Spinnaker (SpinView) camera adapter.
 
 PySpin is imported only when a camera is opened.  This keeps the rest of the

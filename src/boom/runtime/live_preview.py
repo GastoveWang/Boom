@@ -1,3 +1,5 @@
+# 檔案功能：主執行緒 HighGUI 與最新預覽畫面傳遞。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """Keep HighGUI on the main thread and processing on one owned worker.
 
 The mailbox holds only the newest completed visualization. Dropping a preview

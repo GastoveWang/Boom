@@ -10,6 +10,8 @@
 # Independent projects for thesis comparisons
 /benchmark/*
 !/benchmark/.gitkeep
+!/benchmark/ASTT/
+/benchmark/ASTT/.git/
 
 # Test directories (Do not upload)
 /test/

@@ -1,3 +1,5 @@
+# 檔案功能：公開 Spinnaker 相機相容模組。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """Public Spinnaker camera module used by the online runner."""
 
 from __future__ import annotations

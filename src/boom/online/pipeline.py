@@ -1,3 +1,5 @@
+# 檔案功能：取像、即時偵測與證據輸出協調。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """Live frame acquisition, detection and evidence orchestration."""
 from __future__ import annotations
 import argparse

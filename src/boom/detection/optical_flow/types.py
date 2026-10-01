@@ -1,3 +1,5 @@
+# 檔案功能：motion 設定、影格、候選區域、追蹤與輸出資料結構。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 from __future__ import annotations
 import math
 from dataclasses import dataclass, field

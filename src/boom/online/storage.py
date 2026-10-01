@@ -1,3 +1,5 @@
+# 檔案功能：事件 JSONL/CSV、座標與截圖保存。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """Online event evidence persistence (JSONL, CSV, coordinates and screenshots)."""
 from __future__ import annotations
 import csv

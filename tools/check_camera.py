@@ -1,3 +1,5 @@
+# 檔案功能：列出 PySpin SDK 與相機，可指定幀數驗證取像。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """Read-only SDK discovery; optionally acquire a bounded set of frames."""
 from pathlib import Path
 import argparse

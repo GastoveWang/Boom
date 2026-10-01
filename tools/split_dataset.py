@@ -1,3 +1,5 @@
+# 檔案功能：YOLO 偵測／分割資料版本管理、平衡切分與 GUI。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """Split paired YOLO detection and segmentation data 70:30, balancing every class."""
 from __future__ import annotations
 

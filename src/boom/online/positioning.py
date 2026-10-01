@@ -1,3 +1,5 @@
+# 檔案功能：可選固定姿態的地面位置估計。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """Optional static-pose localization for the live runtime."""
 from __future__ import annotations
 import argparse

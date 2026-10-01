@@ -1,3 +1,5 @@
+# 檔案功能：主控台與 session 檔案 logging。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """Console and session-file logging for the live pipeline."""
 import logging
 import sys

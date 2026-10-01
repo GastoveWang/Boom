@@ -1,3 +1,5 @@
+# 檔案功能：共用預設常數與地圖匹配設定結構。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """Shared defaults. Existing detector thresholds are preserved."""
 from pathlib import Path
 from typing import Optional

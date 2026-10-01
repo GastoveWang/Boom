@@ -1,3 +1,5 @@
+# 檔案功能：既有即時入口的相容匯出。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """Compatible live entrypoint; implementation is split under boom_online/."""
 import sys
 from pathlib import Path

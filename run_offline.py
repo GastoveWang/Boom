@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# 檔案功能：離線影片入口：選擇 motion 或 YOLO，執行偵測、顯示、保存與可選定位。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """Run the offline video pipeline with either motion or YOLO detection."""
 
 import sys

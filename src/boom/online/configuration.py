@@ -1,3 +1,5 @@
+# 檔案功能：即時 CLI、相機及偵測設定校驗。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """Online CLI and detector/camera configuration validation."""
 from __future__ import annotations
 import argparse

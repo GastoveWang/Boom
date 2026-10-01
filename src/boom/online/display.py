@@ -1,3 +1,5 @@
+# 檔案功能：即時事件疊圖。
+# 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """Live event overlays."""
 from __future__ import annotations
 from typing import Any
