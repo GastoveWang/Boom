@@ -147,6 +147,8 @@ class MapLocalizer(BaseLocalizer):
         return visual_odometry.replenish(self, gray, k)
 
     def process(self, frame, frame_idx, fps):
+        self.current_frame_idx = frame_idx
+        self.current_time_sec = frame_idx / fps
         return visual_odometry.process(self, frame, frame_idx, fps)
 
     def panel(self, height, width):

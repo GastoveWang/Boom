@@ -19,7 +19,6 @@ Boom/
 ├── run_realtime.py                 # Spinnaker 相機入口
 ├── configs/                        # 分類設定（見 configs/README.md）
 ├── doc/                            # Boom 文件
-├── benchmark/                      # 碩論比較用的其他專案
 ├── src/boom/
 │   ├── detection/
 │   │   ├── optical_flow/           # Motion 偵測器

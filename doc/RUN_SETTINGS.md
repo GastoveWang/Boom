@@ -1,6 +1,6 @@
 # 執行入口與完整設定
 
-從 Boom 根目錄執行。以下 CLI 表由目前 argparse 定義產生；絕對路徑以 `<Boom>` 表示專案根。ASTT 的資料／輸出根會再附加 astt/；修改 configs/*.yaml 不會改 ASTT 設定。
+從 Boom 根目錄執行。以下 CLI 表由目前 argparse 定義產生；絕對路徑以 `<Boom>` 表示專案根。
 
 ## 常用入口
 
@@ -14,11 +14,9 @@ python tools/check_camera.py --frames 30
 python tools/video_to_frames.py data/video/example.mp4 --interval 0.5
 python tools/split_dataset.py
 python tools/train_yolo.py
-python benchmark/ASTT/train.py --experiment-name astt_first --epochs 30 --batch-size 1
-python benchmark/ASTT/test.py --checkpoint output/astt/astt_first/checkpoints/best.pth --experiment-name astt_test --batch-size 1
 ```
 
-影片／模型路徑為示例，須替換成現有檔案。ASTT 訓練前準備正常 train 與獨立 val；測試需本機版權重。即時相機需原廠 PySpin SDK。YOLO 訓練的模型、資料集與超參數由互動提示選擇，細節見 [TOOLS.md](TOOLS.md)。
+影片／模型路徑為示例，須替換成現有檔案。即時相機需原廠 PySpin SDK。YOLO 訓練的模型、資料集與超參數由互動提示選擇，細節見 [TOOLS.md](TOOLS.md)。
 
 ## Boom YAML 設定
 
@@ -212,7 +210,7 @@ ui:
 | `--map-max-reprojection-error-px` | `2.5` | map max reprojection error px |
 | `--map-min-coverage` | `0.02` | map min coverage |
 | `--map-cache-entries` | `9` | map cache entries |
-| `--map-debug` | `False` | Save each map-match call's ROI/matches/inliers/footprint diagnostics. |
+| `--map-debug` | `False` | 額外保存 UAV／ROI／inliers／footprint 診斷；匹配圖與數據預設保存。 |
 | `--ground-height` | `None` | Camera height above local ground in metres; default: photo RelativeAltitude approximation. |
 | `--allow-gps-seed` | `False` | Allow explicitly provisional GPS-photo VO if photo/map visual matching fails. |
 | `--drone-icon` | `<Boom>\asset\pictures\drone.png` | drone icon |
@@ -277,61 +275,6 @@ ui:
 | `--drone-pitch` | `-45.0` | drone pitch |
 | `--drone-roll` | `0.0` | drone roll |
 
-## ASTT 訓練 CLI
-
-| 參數 | 預設值 | 用途／限制 |
-|---|---|---|
-| `--data-dir` | `<Boom>\data` | Root containing astt/ |
-| `--output-dir` | `<Boom>\output` | output dir |
-| `--experiment-name` | `20261001_201320_522097` | experiment name |
-| `--device` | `auto` | device；可選 auto, cpu, cuda |
-| `--batch-size` | `8` | batch size |
-| `--num-workers` | `0` | 0 is safest on Windows |
-| `--registration` | `False` | ECC align past inputs to latest input |
-| `--checkpoint` | `None` | Initialize model / required for inference |
-| `--seed` | `2026` | seed |
-| `--threshold` | `0.1` | Absolute channel-mean squared error in [-1,1] image space |
-| `--min-area` | `25` | Minimum component area at model resolution |
-| `--morph-kernel` | `3` | morph kernel |
-| `--min-event-frames` | `3` | min event frames |
-| `--event-iou` | `0.3` | event iou |
-| `--event-max-gap` | `2` | event max gap |
-| `--resume` | `None` | Restore model, optimizer, scheduler and RNG |
-| `--epochs` | `30` | Total target epochs, including resumed epochs |
-| `--lr` | `0.0001` | lr |
-| `--weight-decay` | `0.0001` | weight decay |
-| `--image-size` | `256` | image size |
-| `--patch-size` | `32` | patch size |
-| `--emb-dim` | `768` | emb dim |
-| `--mlp-dim` | `3072` | mlp dim |
-| `--num-heads` | `8` | num heads |
-| `--spatial-layers` | `12` | spatial layers |
-| `--temporal-layers` | `12` | temporal layers |
-| `--num-frames` | `4` | num frames |
-| `--dropout-rate` | `0.1` | dropout rate |
-| `--selection` | `mse` | Best checkpoint criterion, val only；可選 mse, auc |
-
-## ASTT 測試 CLI
-
-| 參數 | 預設值 | 用途／限制 |
-|---|---|---|
-| `--data-dir` | `<Boom>\data` | Root containing astt/ |
-| `--output-dir` | `<Boom>\output` | output dir |
-| `--experiment-name` | `20261001_201320_523098` | experiment name |
-| `--device` | `auto` | device；可選 auto, cpu, cuda |
-| `--batch-size` | `8` | batch size |
-| `--num-workers` | `0` | 0 is safest on Windows |
-| `--registration` | `False` | ECC align past inputs to latest input |
-| `--checkpoint` | `None` | Initialize model / required for inference |
-| `--seed` | `2026` | seed |
-| `--threshold` | `0.1` | Absolute channel-mean squared error in [-1,1] image space |
-| `--min-area` | `25` | Minimum component area at model resolution |
-| `--morph-kernel` | `3` | morph kernel |
-| `--min-event-frames` | `3` | min event frames |
-| `--event-iou` | `0.3` | event iou |
-| `--event-max-gap` | `2` | event max gap |
-| `--split` | `test` | split；可選 val, test |
-
 ## tools/check_camera.py 設定
 
 | 參數 | 預設／形式 | 用途／限制 |
@@ -383,15 +326,3 @@ YOLO 訓練不是以 argparse 設定全部超參數；模型與版本資料集�
 ```python
 model.train(data=str(DATA_YAML), epochs=100, imgsz=IMAGE_SIZE, batch=-1, device=0, patience=20, optimizer='auto', workers=8, project=str(RUNS_DIR), name=EXPERIMENT_NAME, exist_ok=True)
 ```
-
-## ASTT 抽幀設定
-
-| 參數 | 預設 | 用途 |
-|---|---|---|
-| video | 必填 | 來源影片路徑。 |
-| --fps | 10 | 抽幀 FPS，不得高於來源 FPS。 |
-| --name | 影片 stem | 片段資料夾名稱，已存在則拒絕覆寫。 |
-| --split | train | train、val 或 test。 |
-| --data-dir | <Boom>/data | 根目錄，會附加 astt/<split>。 |
-
-模型設定由 checkpoint 載入時，以權重內 model_config 為準；registration 必須與訓練一致。resume 要保持原總 epochs、每 epoch steps 和選模方式。threshold/min-area 等只影響候選區域，不是煙霧分類信心。更多格式和限制見 [ASTT 本機說明](../benchmark/ASTT/README_LOCAL.md)。

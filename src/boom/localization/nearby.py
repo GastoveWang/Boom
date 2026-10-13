@@ -24,7 +24,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
-import tempfile
+import time
 
 import cv2
 import numpy as np
@@ -34,6 +34,7 @@ from .geo_map import read_roi, roi_window
 from .geometry import transform
 from .regions import GeoTIFFIndex, gps_bounds, select_nearest_submap
 from .feature_matching import create_feature_backend
+from .match_output import geometric_quality, match_directory, write_match
 
 
 @dataclass
@@ -112,6 +113,7 @@ class NearbyMapLocalizer:
             yield self.cache[key]
 
     def localize(self, frame, longitude, latitude, *, search_radius_m=None, debug_dir=None):
+        started = time.monotonic()
         radius = self.config.search_radius_m if search_radius_m is None else search_radius_m
         gps_bounds(longitude, latitude, radius)  # validate even for featureless frames
         if self.config.debug and debug_dir is None:
@@ -131,12 +133,12 @@ class NearbyMapLocalizer:
         sx, sy = work.shape[1]/width, work.shape[0]/height
         to_work = np.array([[sx, 0, (sx-1)/2], [0, sy, (sy-1)/2], [0, 0, 1.]])
         reports, best = [], None
-        debug_path = None
-        if self.config.debug:
-            Path(debug_dir).mkdir(parents=True, exist_ok=True)
-            debug_path = Path(tempfile.mkdtemp(prefix="map_match_", dir=debug_dir))
+        result_path = match_directory(debug_dir, "map_match")
+        debug_path = result_path if self.config.debug else None
+        if debug_path:
             cv2.imwrite(str(debug_path / "uav.jpg"), frame)
         for number, entry in enumerate(self.candidate_rois(longitude, latitude, radius)):
+            candidate_started = time.monotonic()
             roi, map_features = entry
             if map_features is None:
                 map_gray = cv2.cvtColor(roi.image, cv2.COLOR_BGR2GRAY)
@@ -145,36 +147,48 @@ class NearbyMapLocalizer:
                 entry[1] = map_features
             a, b, scores = self.backend.match(features, map_features)
             h, selected, quality = self._verify(a, b, gray.shape, roi.mask)
+            # Report measurable diagnostics even when quality gates reject a match.
+            metrics = geometric_quality(a, b, h, selected, gray.shape)
+            quality.setdefault("coverage", metrics["coverage"])
+            if quality["reprojection_error_px"] is None:
+                quality["reprojection_error_px"] = metrics["reprojection_error_px"]
             quality["matcher_backend"] = self.config.matcher_backend
             quality["mean_match_confidence"] = float(np.mean(scores)) if scores is not None and len(scores) else None
             report = {"filepath": str(roi.tile.path), **quality}
             reports.append(report)
-            if debug_path:
-                self._debug(debug_path, number, work, roi, a, b, h, selected)
-            if not quality["accepted"]:
-                continue
-            original_points = transform(a, np.linalg.inv(to_work))
-            result = MapMatchResult(True, "matched", roi=roi, homography=h @ to_work,
+            if quality["accepted"]:
+                original_points = transform(a, np.linalg.inv(to_work))
+                result = MapMatchResult(True, "matched", roi=roi, homography=h @ to_work,
                                     image_shape=frame.shape, image_points=original_points,
                                     map_points=b, inliers=selected, quality=quality,
                                     match_scores=scores, submap=roi.tile.region)
-            # A plausible match must map the frame center into valid map data.
-            center_geo = result.pixel_to_geo((width-1)/2, (height-1)/2)
-            if center_geo is None:
-                report.update(accepted=False, reason="center_outside_coverage")
-                continue
-            from pyproj import Geod
-            distance = Geod(ellps="WGS84").inv(longitude, latitude, *center_geo)[2]
-            if distance > radius:
-                report.update(accepted=False, reason="outside_search_radius")
-                continue
-            if best is None or quality["score"] > best.quality["score"]:
-                best = result
+                # A plausible match must map the center into valid nearby data.
+                center_geo = result.pixel_to_geo((width-1)/2, (height-1)/2)
+                if center_geo is None:
+                    quality.update(accepted=False, reason="center_outside_coverage")
+                else:
+                    from pyproj import Geod
+                    distance = Geod(ellps="WGS84").inv(longitude, latitude, *center_geo)[2]
+                    quality.update(center_gps=list(center_geo), prior_distance_m=float(distance))
+                    if distance > radius:
+                        quality.update(accepted=False, reason="outside_search_radius")
+                if quality["accepted"] and (best is None or quality["score"] > best.quality["score"]):
+                    best = result
+            quality["elapsed_ms"] = (time.monotonic() - candidate_started) * 1000
+            report.update(quality)
+            write_match(result_path, "map_match", work, roi.image, a, b, selected,
+                        quality, name=f"{number:02d}_matches", filepath=str(roi.tile.path))
+            if debug_path:
+                self._debug(debug_path, number, work, roi, a, b, h, selected)
         result = best or MapMatchResult(False, "quality_rejected" if reports else "no_candidate_maps")
         result.candidates = reports
-        if debug_path:
-            (debug_path / "quality.json").write_text(json.dumps(
-                {"success": result.success, "reason": result.reason, "candidates": reports},
+        summary = {"stage": "map_match", "success": result.success, "reason": result.reason,
+                   "candidates": reports, "elapsed_ms": (time.monotonic() - started) * 1000}
+        print(f"[MATCH] map_match: success={result.success}, reason={result.reason}, "
+              f"candidates={len(reports)}, elapsed_ms={summary['elapsed_ms']:.2f}", flush=True)
+        if result_path:
+            (result_path / "quality.json").write_text(json.dumps(
+                summary,
                 indent=2, allow_nan=False), encoding="utf-8")
         return result
 
@@ -225,7 +239,7 @@ class NearbyMapLocalizer:
         ka = [cv2.KeyPoint(float(x), float(y), 1) for x, y in a]
         kb = [cv2.KeyPoint(float(x), float(y), 1) for x, y in b]
         pairs = [cv2.DMatch(i, i, 0) for i in range(len(a))]
-        for name, selection in (("matches", None), ("inliers", selected.astype(int).tolist())):
+        for name, selection in (("inliers", selected.astype(int).tolist()),):
             canvas = cv2.drawMatches(frame, ka, roi.image, kb, pairs, None,
                                      matchesMask=selection, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
             cv2.imwrite(str(directory / f"{number:02d}_{name}.jpg"), canvas)

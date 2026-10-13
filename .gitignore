@@ -8,10 +8,7 @@
 /wildfire-real-time-segmentation/
 
 # Independent projects for thesis comparisons
-/benchmark/*
-!/benchmark/.gitkeep
-!/benchmark/ASTT/
-/benchmark/ASTT/.git/
+/benchmark/
 
 # Test directories (Do not upload)
 /test/

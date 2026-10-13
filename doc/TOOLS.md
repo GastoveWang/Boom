@@ -1,4 +1,4 @@
-# Boom 資料準備與 YOLO 訓練工具鏈 (tools/)
+# Boom 資料準備與模型訓練工具
 
 `tools/` 包含 Boom 專案的資料準備、資料集切分與 YOLO 訓練工具。
 

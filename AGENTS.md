@@ -28,6 +28,11 @@ Boom 的最終目標是：**讓飛行中的無人機可以即時偵測、顯示�
 
 ## 工作原則
 
+- 日常開發、提交與 GitHub 推送一律使用 `dev` 分支；除非使用者明確要求，不更新 `master`。
+- `dev` 可追蹤 benchmark 原始碼；`master` 只保留 Boom 專案本身，整個 `benchmark/` 不得納入其版本內容。
+- 更新 `master` 時，僅同步 Boom 專案變更，保留該分支的 `/benchmark/` 忽略規則；不要直接合併含 benchmark 的 `dev`。
+- 分支整理不得刪除本機 benchmark、資料、模型或輸出；不改寫既有 Git 歷史。
+
 - 修改前先閱讀相關程式、`doc/PROJECT_STRUCTURE.md` 與 `doc/` 中對應方法的說明。
 - 優先做最小且可驗證的修改，不任意重構或刪除既有功能。
 - 保留 `artillery/` 現有匯入路徑的相容性，除非使用者明確要求遷移。

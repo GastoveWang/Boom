@@ -91,7 +91,7 @@ def build_arg_parser(
         parser.add_argument("--map-" + name.replace("_", "-"), type=value_type,
                             default=getattr(defaults, name))
     parser.add_argument("--map-debug", action="store_true",
-                        help="Save each map-match call's ROI/matches/inliers/footprint diagnostics.")
+                        help="Save extra UAV/ROI/inliers/footprint diagnostics; match images and metrics are always saved.")
     parser.add_argument("--ground-height", type=float,
                         help="Camera height above local ground in metres; default: photo RelativeAltitude approximation.")
     parser.add_argument("--allow-gps-seed", action="store_true",
