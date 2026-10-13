@@ -84,8 +84,8 @@ benchmark/ASTT/data/prepared/artillery-shell_v1/
 匯出完成後看該版本的 `README.md`。`--data-dir` 必須指向 **包含 astt 的版本目錄**，例如 `benchmark/ASTT/data/prepared/artillery-shell_v1`。從 Boom 根目錄執行：
 
 ```powershell
-python benchmark/ASTT/train.py --data-dir "benchmark/ASTT/data/prepared/artillery-shell_v1" --output-dir benchmark/ASTT/output --selection auc --experiment-name astt_artillery_shell_001 --device cuda --batch-size 8 --epochs 30
-python benchmark/ASTT/test.py --split val --data-dir "benchmark/ASTT/data/prepared/artillery-shell_v1" --output-dir benchmark/ASTT/output --checkpoint benchmark/ASTT/output/astt/astt_artillery_shell_001/checkpoints/best.pth --experiment-name astt_artillery_shell_val_001 --device cuda --batch-size 8
+python benchmark/ASTT/scripts/train.py --data-dir "benchmark/ASTT/data/prepared/artillery-shell_v1" --output-dir benchmark/ASTT/output --selection auc --experiment-name astt_artillery_shell_001 --device cuda --batch-size 8 --epochs 30
+python benchmark/ASTT/scripts/test.py --split val --data-dir "benchmark/ASTT/data/prepared/artillery-shell_v1" --output-dir benchmark/ASTT/output --checkpoint benchmark/ASTT/output/astt/astt_artillery_shell_001/checkpoints/best.pth --experiment-name astt_artillery_shell_val_001 --device cuda --batch-size 8
 ```
 
 `--selection auc` 要求 val 可評分幀含兩類；不符合時匯出的 README 會使用 `--selection mse`，請以該文件為準。模型維持完整 STE＋TTE＋CSA 預設值。每次訓練使用新的 experiment name。訓練結束已會用最佳權重輸出 val 的熱圖、候選事件與指標；也可用上面 `test.py --split val` 重新產生。這些是 validation 結果。

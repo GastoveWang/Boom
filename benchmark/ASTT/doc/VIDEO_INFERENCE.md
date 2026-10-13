@@ -6,7 +6,7 @@
 
 ```bat
 conda activate boom
-python benchmark/ASTT/inference.py --video "C:\videos\new_video.mp4" --checkpoint benchmark/ASTT/output/astt/astt_artillery_shell_v1_001/checkpoints/best.pth --device cuda
+python benchmark/ASTT/scripts/inference.py --video "C:\videos\new_video.mp4" --checkpoint benchmark/ASTT/output/astt/astt_artillery_shell_v1_001/checkpoints/best.pth --device cuda
 ```
 
 預設會建立新的 `benchmark/ASTT/output/astt/video_<時間>/`。模型尺寸與歷史幀數從 checkpoint 讀取。預設 batch size 8，影片與標記匯出共用固定 30 FPS 時間軸：高幀率取樣、低幀率重複原始影格，無需手動設定 FPS。影片來源不會被修改，不會保存抽出的原始圖片。
@@ -16,7 +16,7 @@ python benchmark/ASTT/inference.py --video "C:\videos\new_video.mp4" --checkpoin
 例如：
 
 ```bat
-python benchmark/ASTT/inference.py --video "C:\videos\new_video.mp4" --checkpoint benchmark/ASTT/output/astt/astt_artillery_shell_v1_001/checkpoints/best.pth --device cuda --display --experiment-name new_video_001
+python benchmark/ASTT/scripts/inference.py --video "C:\videos\new_video.mp4" --checkpoint benchmark/ASTT/output/astt/astt_artillery_shell_v1_001/checkpoints/best.pth --device cuda --display --experiment-name new_video_001
 ```
 
 ## 輸出

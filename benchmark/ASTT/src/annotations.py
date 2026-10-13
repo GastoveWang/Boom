@@ -370,8 +370,8 @@ def export_dataset(sources, output_parent, name='artillery-shell', ratios=(7., 3
             'train 保存完整影片與標籤，ASTT loader 會排除 input＋target 五幀中含異常的窗口。\n'
             '所有片段依來源群組分配；比例按群組數近似，不是隨機切單張圖片。\n\n'
             f'從 Boom 根目錄執行：\n\n```powershell\n'
-            f'python benchmark/ASTT/train.py --data-dir "{output}" --output-dir "{results_root}" --selection {plan["selection"]} --experiment-name "{experiment}" --device cuda --batch-size 8 --epochs 30\n'
-            f'python benchmark/ASTT/test.py --split val --data-dir "{output}" --output-dir "{results_root}" --checkpoint "{results_root / "astt" / experiment / "checkpoints" / "best.pth"}" --experiment-name "{experiment}_val" --device cuda --batch-size 8\n```\n'
+            f'python benchmark/ASTT/scripts/train.py --data-dir "{output}" --output-dir "{results_root}" --selection {plan["selection"]} --experiment-name "{experiment}" --device cuda --batch-size 8 --epochs 30\n'
+            f'python benchmark/ASTT/scripts/test.py --split val --data-dir "{output}" --output-dir "{results_root}" --checkpoint "{results_root / "astt" / experiment / "checkpoints" / "best.pth"}" --experiment-name "{experiment}_val" --device cuda --batch-size 8\n```\n'
             'val 用於選模與查看效果，本版本沒有獨立 test。\n'
             '如已執行過同名實驗，請更換 experiment-name，並對應修改測試的 checkpoint 路徑。\n', encoding='utf-8')
         return report

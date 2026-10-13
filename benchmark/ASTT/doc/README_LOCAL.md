@@ -3,15 +3,15 @@
 # ASTT for Boom（本機整理版）
 
 正式入口是 `train.py`、`test.py`、`tools/extract_frames.py` 與 `tools/prepare_dataset.py`。
-正式程式以平坦模組放入 `src/`，桌面介面集中在 `src/ui/`。官方全部原檔逐位元保存於 `origin/`，禁止修改；`legacy/` 保留先前已加註解與匯入調整的歷史參考。兩者都不參與正式流程。新的正式流程沒有固定使用者名稱、特定影片或 checkpoint 路徑，也不依賴 timm / torchvision。
+正式程式以平坦模組放入 `src/`，桌面介面集中在 `src/ui/`。官方全部原檔逐位元保存於 `origin/`，禁止修改；正式入口位於 `scripts/`，官方快照不參與正式流程。新的正式流程沒有固定使用者名稱、特定影片或 checkpoint 路徑，也不依賴 timm / torchvision。
 
-上游：[Tungufm/ASTT](https://github.com/Tungufm/ASTT)，基準 commit `1d05305a94fb47b33897c7aa085c5351bcbbc8f9`。目前作為一般原始碼目錄納入 Boom Git，已移除內層 `.git`；上游 README 和歷史模型／實驗程式保留。快速入口與檔案分組見 [START_HERE.md](../START_HERE.md)，完整設定見 [RUN_SETTINGS.md](RUN_SETTINGS.md)。
+上游：[Tungufm/ASTT](https://github.com/Tungufm/ASTT)，基準 commit `1d05305a94fb47b33897c7aa085c5351bcbbc8f9`。目前作為一般原始碼目錄納入 Boom Git，已移除內層 `.git`；上游 README 和歷史模型／實驗程式保留。快速入口與檔案分組見 [START_HERE.md](START_HERE.md)，完整設定見 [RUN_SETTINGS.md](RUN_SETTINGS.md)。
 
 ## 模型與論文對照
 
 已閱讀 *Transformer-Based Spatio-Temporal Unsupervised Traffic Anomaly Detection in Aerial Videos*（IEEE TCSVT 2024，DOI [10.1109/TCSVT.2024.3376399](https://doi.org/10.1109/TCSVT.2024.3376399)）的 Section III、Fig. 2–3、Eq. 6–13，以及 Section IV-C；本機來源為 Downloads 中使用者指定名稱的 PDF。
 
-`src/model.py` 是以 `legacy/model_ste_tte.py` 的分解流程與 decoder 為基礎整理的 STE + TTE + CSA：
+`src/model.py` 是以 `origin/model_ste_tte.py` 的分解流程與 decoder 為基礎整理的 STE + TTE + CSA：
 
 1. 四幀依時間先後送入**共享** spatial transformer，取每幀 spatial CLS。
 2. 加 temporal CLS 與 temporal position embedding，送入 temporal transformer，保留全部 5 tokens。
@@ -46,14 +46,14 @@ Boom **定位擴充**：channel-mean squared-error spatial maps、threshold/morp
 
 ```powershell
 conda activate boom
-cd C:\Users\roger\IDEA\Boom\benchmark\ASTT
-python -m pip install -r requirements.txt
-python smoke_test.py
+cd C:\Users\roger\IDEA\Boom
+python -m pip install -r benchmark/ASTT/requirements.txt
+python benchmark/ASTT/tests/smoke_test.py
 ```
 
 可另建 Python 3.10–3.13 環境。GPU 請先依 PyTorch 官方安裝方式選擇符合硬體的 torch build；`requirements.txt` 不固定 CUDA wheel。保留的上游 ablation 若要另行研究，還需 matching torchvision 與 timm，且那些腳本尚未整理成正式本機入口。
 
-`src/config.py` 使用 `Path(__file__).resolve().parents[4]` 推導 Boom；抽幀工具位於 tools，使用 `parents[3]`。根目錄入口會載入本機 `src`，不需要額外安裝套件。因此程式碼沒有硬編碼 `roger`，移動整個 Boom 目錄仍可使用。
+`src/config.py` 使用 `Path(__file__).resolve().parents[3]` 推導 Boom；抽幀工具位於 tools，使用 `parents[3]`。`scripts/` 入口會載入本機 `src`，不需要額外安裝套件。因此程式碼沒有硬編碼 `roger`，移動整個 Boom 目錄仍可使用。
 
 ## 資料格式
 
@@ -83,9 +83,9 @@ Train 與 val 必須来自不同原影片，程式拒絕相同影片目錄名稱
 ## 抽幀
 
 ```powershell
-python tools/extract_frames.py ..\..\data\video\normal.mp4 --split train --name normal_001 --fps 10
-python tools/extract_frames.py ..\..\data\video\val.mp4 --split val --name val_001
-python tools/extract_frames.py ..\..\data\video\test.mp4 --split test --name test_001
+python benchmark/ASTT/tools/extract_frames.py data\video\normal.mp4 --split train --name normal_001 --fps 10
+python benchmark/ASTT/tools/extract_frames.py data\video\val.mp4 --split val --name val_001
+python benchmark/ASTT/tools/extract_frames.py data\video\test.mp4 --split test --name test_001
 ```
 
 預設 10 FPS，順序 decode，不複製影格提高 FPS。输出資料夾已存在則拒絕覆寫；保存 `frames.csv`（filename/source_frame_index/time_seconds），供 label 重採樣和時間轉換。此工具假設固定 FPS 的 MP4；變動 FPS／損壞 timestamp 需要另外驗證時間對應。若 decode 中途失敗會保留已輸出內容，請檢查後使用新的名稱重試。
@@ -93,15 +93,15 @@ python tools/extract_frames.py ..\..\data\video\test.mp4 --split test --name tes
 ## 訓練與 validation
 
 ```powershell
-python train.py --experiment-name baseline_001 --epochs 30 --batch-size 2 --device auto
+python benchmark/ASTT/scripts/train.py --experiment-name baseline_001 --epochs 30 --batch-size 2 --device auto
 ```
 
 預設從零開始（checkpoint=None）。使用 normal train，只在 val 驗證；不讀 test。預設以 val 全部可評分 target 的平均 MSE 選 best；若 val 含異常，此值會包含異常，建議在全標註的 val 改用 `--selection auc`。AUC 選模必須 val 所有影片都有 labels，且可評分幀含 0、1 兩類。
 
 ```powershell
-python train.py --experiment-name auc_001 --selection auc --epochs 30 --batch-size 2
-python train.py --resume ..\..\output\astt\baseline_001\checkpoints\last.pth --experiment-name baseline_resume --epochs 30 --batch-size 2
-python train.py --checkpoint ..\..\output\astt\baseline_001\checkpoints\best.pth --experiment-name finetune_001 --epochs 10 --batch-size 2
+python benchmark/ASTT/scripts/train.py --experiment-name auc_001 --selection auc --epochs 30 --batch-size 2
+python benchmark/ASTT/scripts/train.py --resume output\astt\baseline_001\checkpoints\last.pth --experiment-name baseline_resume --epochs 30 --batch-size 2
+python benchmark/ASTT/scripts/train.py --checkpoint output\astt\baseline_001\checkpoints\best.pth --experiment-name finetune_001 --epochs 10 --batch-size 2
 ```
 
 `--resume` 恢復 model、optimizer、OneCycle scheduler、epoch、best score 與 Torch RNG；總 epochs、每 epoch steps、selection 和 registration 必須相同。它是完成原排程，不是任意延長 OneCycle；旁邊須保留同實驗的 `best.pth`，續訓新目錄也會保留此前最佳模型。`--checkpoint` 只初始化 model，開始新的 optimizer／排程；與 resume 互斥。使用本版存出的 checkpoint，拒絕自動猜測舊權重格式。
@@ -111,8 +111,8 @@ python train.py --checkpoint ..\..\output\astt\baseline_001\checkpoints\best.pth
 ## 測試／推論
 
 ```powershell
-python test.py --checkpoint ..\..\output\astt\baseline_001\checkpoints\best.pth --experiment-name test_001 --device auto --batch-size 2
-python test.py --split val --checkpoint ..\..\output\astt\baseline_001\checkpoints\best.pth --experiment-name val_review
+python benchmark/ASTT/scripts/test.py --checkpoint output\astt\baseline_001\checkpoints\best.pth --experiment-name test_001 --device auto --batch-size 2
+python benchmark/ASTT/scripts/test.py --split val --checkpoint output\astt\baseline_001\checkpoints\best.pth --experiment-name val_review
 ```
 
 Test 預設 `--split test`，必須明確給 checkpoint，不會以隨機權重推論。Inference 的模型尺寸由 checkpoint 讀取。
@@ -144,7 +144,7 @@ Error map `E[y,x] = mean_channel((prediction−target)^2)`；scalar score = E.me
 `--min-event-frames 3` 要求至少連續 3 個評分幀命中才能確認；`--event-iou 0.3` 為相鄰 bbox 關聯門檻；`--event-max-gap 2` 容忍漏檢 2 幀仍保持同事件。確認後持續烟塵不每幀新增事件。超過 gap、IoU 不足、分裂或大幅 camera motion 仍可能形成新事件；單純 IoU 不是專業煙霧 tracker。參數以**抽幀後幀數**計，10 FPS 下 3 幀約 0.3 秒觀察窗口（首次命中到第三次命中約 0.2 秒）。
 
 ```powershell
-python test.py --checkpoint ..\..\output\astt\baseline_001\checkpoints\best.pth --experiment-name localized_001 --threshold 0.15 --min-area 40 --min-event-frames 5 --event-iou 0.3 --event-max-gap 2
+python benchmark/ASTT/scripts/test.py --checkpoint output\astt\baseline_001\checkpoints\best.pth --experiment-name localized_001 --threshold 0.15 --min-area 40 --min-event-frames 5 --event-iou 0.3 --event-max-gap 2
 ```
 
 Threshold 請以正常 validation 的 error 分布及誤報/漏報調整，不能用 test labels 調參再把同一 test 結果作無偏比較。高誤差也可能来自雲霧、光線變化、粉塵、未建模場景或相機運動，不保證是煙。
@@ -154,8 +154,8 @@ Threshold 請以正常 validation 的 error 分布及誤報/漏報調整，不�
 `--registration` 預設關閉。以 ECC Euclidean（translation + rotation）將較早的 input frames 對齊到**最後一個 input**；target 保留原幀，沒有以未來 target 配準造成作弊。失敗時 warning 並回退原圖。Train/inference 必須同樣設置，checkpoint 會檢查。
 
 ```powershell
-python train.py --registration --experiment-name registered_001 --epochs 30 --batch-size 2
-python test.py --registration --checkpoint ..\..\output\astt\registered_001\checkpoints\best.pth --experiment-name registered_test
+python benchmark/ASTT/scripts/train.py --registration --experiment-name registered_001 --epochs 30 --batch-size 2
+python benchmark/ASTT/scripts/test.py --registration --checkpoint output\astt\registered_001\checkpoints\best.pth --experiment-name registered_test
 ```
 
 這只穩定歷史 context，不能消除最後 input→future target 的相機運動；對 parallax、尺度變化、透視、rolling shutter、大面積煙霧／動態前景仍有限，邊界反射填補也可能產生誤差。ECC 增加 CPU latency，不宜直接聲稱可以機載即時。需要在 UAV 資料比較 registration on/off、誤報、漏報、事件延遲、FPS 和定位誤差。

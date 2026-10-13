@@ -2,7 +2,6 @@
 # 執行設定：doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。
 """Regenerate Boom's file-purpose index, source header comments and CLI reference."""
 import ast
-import importlib.util
 from pathlib import Path
 import re
 import sys
@@ -21,9 +20,9 @@ PURPOSES = {
     'doc/RUN_SETTINGS.md': '執行入口、目前 YAML 值與 CLI 完整參數表。',
     'doc/README.md': '文件入口與比較專案的 Git 追蹤規則。',
     'configs/README.md': '分類 YAML 用途、覆寫順序與地圖匹配設定。',
-    'benchmark/ASTT/START_HERE.md': 'ASTT 正式／歷史檔案分组與訓練、測試快速操作。',
-    'benchmark/ASTT/README_LOCAL.md': 'ASTT 本機適配、模型解讀、資料格式、設定與限制。',
-    'benchmark/ASTT/README.md': 'ASTT 上游論文、作者與引用資訊。',
+    'benchmark/ASTT/doc/START_HERE.md': 'ASTT 正式入口、資料準備與訓練／測試快速操作。',
+    'benchmark/ASTT/doc/README_LOCAL.md': 'ASTT 本機適配、模型解讀、資料格式、設定與限制。',
+    'benchmark/ASTT/README.md': 'ASTT 本機專案總覽與文件入口。',
     'benchmark/ASTT/requirements.txt': '正式 ASTT 流程的 torch、NumPy、OpenCV 依賴。',
     'run_offline.py': '離線影片入口：選擇 motion 或 YOLO，執行偵測、顯示、保存與可選定位。',
     'run_realtime.py': 'Spinnaker 即時相機入口：取像、偵測、畫面顯示與事件保存。',
@@ -46,7 +45,6 @@ GROUPS = {
     'pipelines': {'cli':'離線 CLI 定義、參數校驗與地圖匹配設定','main':'離線流程選擇與啟動','map_localization':'地圖定位舊匯入路徑相容層','optical_flow_pipeline':'motion 離線流程相容入口'},
     'runtime': {'async_output':'非同步影片輸出與佇列管理','events':'事件生命週期、地理定位與歷史','inputs':'影片及參考照片路徑解析與影片來源','live_preview':'主執行緒 HighGUI 與最新預覽畫面傳遞','output':'輸出路徑、座標日誌與影片寫入','preview':'預覽縮放，保持偵測座標不變','progress':'終端進度、耗時與結果統計','reference':'參考照片 GPS/XMP 地理資訊解析','runner':'離線影格處理、偵測、定位與輸出主迴圈'},
     'ui': {'composition':'影片、側欄與地圖多面板合成','drawing':'文字與確認事件標記繪製','event_style':'事件標籤與顏色','panels':'事件卡、debug/client 側欄與地圖事件面板','theme':'配色與圓角卡片繪圖'},
-    'ASTT': {'train':'正式訓練入口，設定由 runner.parser 定義','test':'正式驗證／測試入口，必須提供本機 checkpoint','runner':'訓練、驗證、推論、CLI、checkpoint 與輸出核心','dataset':'每影片連續影格窗口、缺幀／標籤校驗與可選 ECC','model':'本機 STE/TTE/CSA 模型與下一幀預測 decoder','localization':'誤差候選 bbox 與事件去抖合併，非 GPS 定位','smoke_test':'暫存資料上的模型、資料、事件与指標自我檢查','model_original':'歷史原始模型，研究參考','model_baseline_ca':'歷史 baseline + cross attention 模型，研究參考','model_ste_tte':'歷史 STE/TTE 模型，研究參考','config':'歷史 ViT argparse 設定；正式入口不使用','data_utils':'歷史影格 loader；正式入口改用 dataset.py','data_loaders':'歷史 CIFAR/ImageNet loader；正式入口不使用','utils':'歷史 metrics、logging 與設定工具','checkpoint':'歷史 JAX/ViT 權重載入與轉換','check_jax':'歷史 JAX 權重檢查入口','eval':'歷史影像分類評估入口，非本機異常測試','Train_and_eval':'歷史資料巡覽與訓練評估腳本，含上游路徑'},
 }
 
 
@@ -56,7 +54,7 @@ def purpose(path):
         return PURPOSES[rel]
     if path.name == '__init__.py':
         return f'{path.parent.name} 套件初始化與公開匯出；不直接執行。'
-    if rel == 'benchmark/ASTT/scripts/extract_frames.py':
+    if rel == 'benchmark/ASTT/tools/extract_frames.py':
         return '正式 MP4 抽幀入口，保存影格與來源幀號／時間 manifest。'
     if path.stem.startswith('train_val_') and 'benchmark/ASTT/' in rel:
         return '歷史 ' + path.stem.removeprefix('train_val_') + ' 資料集／模型實驗；含上游路徑，非正式入口。'
@@ -126,7 +124,7 @@ def main():
                  and (p.suffix in ('.md', '.txt') or p.name == '.gitignore'))
     rows = ['# Boom 逐檔功能索引', '', 'Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統，目標是在影像中即時標示煙霧區域，並估算疑似煙霧源的地面座標。', '',
         '此索引涵蓋專案原始碼、工具、設定與文件；Python 檔案頂端也有功能註記。資料、權重、輸出、第三方標註軟體與 Git/快取不逐檔註記，以免修改使用者資料。', '',
-        '直接執行的入口和參數見 [RUN_SETTINGS.md](RUN_SETTINGS.md)，ASTT 分組見 [START_HERE.md](../benchmark/ASTT/START_HERE.md)。', '', '| 檔案 | 功能 |', '|---|---|']
+        '直接執行的入口和參數見 [RUN_SETTINGS.md](RUN_SETTINGS.md)，ASTT 分組見 [START_HERE.md](../benchmark/ASTT/doc/START_HERE.md)。', '', '| 檔案 | 功能 |', '|---|---|']
     for path in sorted(set(files + other)):
         if not path.exists():
             continue
@@ -144,12 +142,10 @@ def main():
         '| X-AnyLabeling、cvat | 外部標註軟體；不修改、不加入 Boom Git。 |',
         '', '更新索引：`python tools/update_file_index.py`（使用 boom 環境）。'])
     (ROOT/'doc/FILE_INDEX.md').write_text('\n'.join(rows)+'\n', encoding='utf-8')
-    sys.path[:0] = [str(ROOT/'src'), str(ROOT/'benchmark/ASTT')]
+    sys.path[:0] = [str(ROOT/'src'), str(ROOT)]
     from boom.pipelines.cli import build_arg_parser as offline_parser
     from boom.online.configuration import build_arg_parser as online_parser
-    spec = importlib.util.spec_from_file_location('astt_runner_reference', ROOT/'benchmark/ASTT/runner.py')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    from benchmark.ASTT.src import config as module
     sections = ['# 執行入口與完整設定', '',
         '從 Boom 根目錄執行。以下 CLI 表由目前 argparse 定義產生；絕對路徑以 `<Boom>` 表示專案根。ASTT 的資料／輸出根會再附加 astt/；修改 configs/*.yaml 不會改 ASTT 設定。', '',
         '## 常用入口', '', '```powershell', 'conda activate boom', 'python run_offline.py motion --video data/video/example.mp4 --no-map --display',
@@ -157,8 +153,8 @@ def main():
         'python run_realtime.py motion --display', 'python run_realtime.py yolo --display',
         'python tools/check_camera.py --frames 30', 'python tools/video_to_frames.py data/video/example.mp4 --interval 0.5',
         'python tools/split_dataset.py', 'python tools/train_yolo.py',
-        'python benchmark/ASTT/train.py --experiment-name astt_first --epochs 30 --batch-size 1',
-        'python benchmark/ASTT/test.py --checkpoint output/astt/astt_first/checkpoints/best.pth --experiment-name astt_test --batch-size 1', '```', '',
+        'python benchmark/ASTT/scripts/train.py --experiment-name astt_first --epochs 30 --batch-size 1',
+        'python benchmark/ASTT/scripts/test.py --checkpoint output/astt/astt_first/checkpoints/best.pth --experiment-name astt_test --batch-size 1', '```', '',
         '影片／模型路徑為示例，須替換成現有檔案。ASTT 訓練前準備正常 train 與獨立 val；測試需本機版權重。即時相機需原廠 PySpin SDK。YOLO 訓練的模型、資料集與超參數由互動提示選擇，細節見 [TOOLS.md](TOOLS.md)。', '',
         '## Boom YAML 設定', '', '讀取順序與作用見 [configs/README.md](../configs/README.md)。CLI 值可覆蓋對應設定；非所有 YAML 值都由每個 runner 使用，請以 CLI 和 loader 實作為準。保留目前使用者設定，這裡只列出內容。', '']
     for path in sorted((ROOT/'configs').glob('*.yaml')):
@@ -194,7 +190,7 @@ def main():
         '| video | 必填 | 來源影片路徑。 |', '| --fps | 10 | 抽幀 FPS，不得高於來源 FPS。 |',
         '| --name | 影片 stem | 片段資料夾名稱，已存在則拒絕覆寫。 |',
         '| --split | train | train、val 或 test。 |', '| --data-dir | <Boom>/data | 根目錄，會附加 astt/<split>。 |', '',
-        '模型設定由 checkpoint 載入時，以權重內 model_config 為準；registration 必須與訓練一致。resume 要保持原總 epochs、每 epoch steps 和選模方式。threshold/min-area 等只影響候選區域，不是煙霧分類信心。更多格式和限制見 [ASTT 本機說明](../benchmark/ASTT/README_LOCAL.md)。'])
+        '模型設定由 checkpoint 載入時，以權重內 model_config 為準；registration 必須與訓練一致。resume 要保持原總 epochs、每 epoch steps 和選模方式。threshold/min-area 等只影響候選區域，不是煙霧分類信心。更多格式和限制見 [ASTT 本機說明](../benchmark/ASTT/doc/README_LOCAL.md)。'])
     (ROOT/'doc/RUN_SETTINGS.md').write_text('\n'.join(sections)+'\n', encoding='utf-8')
     print(f'Annotated {len(files)} Python files and regenerated reference documents.')
 

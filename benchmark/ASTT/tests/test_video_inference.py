@@ -79,7 +79,7 @@ class VideoInferenceTests(unittest.TestCase):
     def test_cli_writes_complete_movie_scores_and_original_pixel_events(self):
         video = self.video()
         digest = hashlib.sha256(video.read_bytes()).hexdigest()
-        result = subprocess.run([sys.executable, str(PROJECT_ROOT / 'benchmark/ASTT/inference.py'),
+        result = subprocess.run([sys.executable, str(PROJECT_ROOT / 'benchmark/ASTT/scripts/inference.py'),
                                  '--video', str(video), '--checkpoint', str(self.checkpoint),
                                  '--output-dir', str(self.root / 'results'), '--experiment-name', 'video_run',
                                  '--device', 'cpu', '--batch-size', '3', '--threshold', '0', '--min-area', '1',

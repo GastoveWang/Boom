@@ -2,14 +2,14 @@
 
 # ASTT 執行設定
 
-所有指令從 **Boom 根目錄** 執行。正式參數集中在 [../src/config.py](../src/config.py)，抽幀參數在 [../tools/extract_frames.py](../tools/extract_frames.py)。`legacy/config.py` 與 Boom 的 YAML 不影響正式 ASTT。
+所有指令從 **Boom 根目錄** 執行。正式參數集中在 [../src/config.py](../src/config.py)，抽幀參數在 [../tools/extract_frames.py](../tools/extract_frames.py)。`origin/config.py` 與 Boom 的 YAML 不影響正式 ASTT。
 
 完整 CLI 表沿用 [Boom 執行設定索引](../../../doc/RUN_SETTINGS.md#astt-訓練-cli)，也可以查看：
 
 ```powershell
-python benchmark/ASTT/train.py --help
-python benchmark/ASTT/test.py --help
-python benchmark/ASTT/inference.py --help
+python benchmark/ASTT/scripts/train.py --help
+python benchmark/ASTT/scripts/test.py --help
+python benchmark/ASTT/scripts/inference.py --help
 python benchmark/ASTT/tools/extract_frames.py --help
 python benchmark/ASTT/tools/prepare_dataset.py --help
 ```
@@ -31,8 +31,8 @@ python benchmark/ASTT/tools/prepare_dataset.py --help
 
 ```powershell
 conda activate boom
-python benchmark/ASTT/train.py --experiment-name astt_full_001 --device cuda --batch-size 8 --epochs 30
-python benchmark/ASTT/test.py --split val --checkpoint output/astt/astt_full_001/checkpoints/best.pth --experiment-name astt_full_val_001 --device cuda --batch-size 8
+python benchmark/ASTT/scripts/train.py --experiment-name astt_full_001 --device cuda --batch-size 8 --epochs 30
+python benchmark/ASTT/scripts/test.py --split val --checkpoint output/astt/astt_full_001/checkpoints/best.pth --experiment-name astt_full_val_001 --device cuda --batch-size 8
 ```
 
 每次實驗使用新名稱。模型設定從 checkpoint 載入時以權重內容為準；registration 要與訓練一致。資料與輸出根預設分別為 Boom 的 `data/`、`output/`，再附加 `astt/`。
@@ -42,7 +42,7 @@ python benchmark/ASTT/test.py --split val --checkpoint output/astt/astt_full_001
 短測試使用實際資料與目前完整模型，只取最多四個 train batch、兩個 val batch，跑一輪並保存／重新載入最佳權重。這是執行診斷，短測試的 AUC 不代表正式效果；原資料集不會被修改。
 
 ```powershell
-python benchmark/ASTT/train.py --data-dir benchmark/ASTT/data/prepared/artillery-shell_v1 --output-dir benchmark/ASTT/output --experiment-name astt_preflight_001 --device cuda --batch-size 8 --epochs 1 --selection auc --preflight
+python benchmark/ASTT/scripts/train.py --data-dir benchmark/ASTT/data/prepared/artillery-shell_v1 --output-dir benchmark/ASTT/output --experiment-name astt_preflight_001 --device cuda --batch-size 8 --epochs 1 --selection auc --preflight
 ```
 
 `--preflight` 必須搭配 `--epochs 1`，不能搭配 `--resume`。val 子集會分別從正常、異常窗口取樣。若 val 只有一類，改用 `--selection mse`。每次診斷也需要新的實驗名稱，避免覆寫已有輸出。正式訓練移除 `--preflight` 並設定 `--epochs 30`，使用另一個新實驗名稱。

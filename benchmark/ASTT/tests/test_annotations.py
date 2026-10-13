@@ -230,12 +230,12 @@ class AnnotationTests(unittest.TestCase):
                   '--device', 'cpu', '--batch-size', '8']
         tiny = ['--epochs', '1', '--image-size', '32', '--patch-size', '16', '--emb-dim', '32',
                 '--mlp-dim', '64', '--num-heads', '4', '--spatial-layers', '1', '--temporal-layers', '1']
-        subprocess.run([sys.executable, str(base / 'train.py'), *common, *tiny,
+        subprocess.run([sys.executable, str(base / 'scripts' / 'train.py'), *common, *tiny,
                         '--selection', report['selection'], '--experiment-name', 'prepared_train'],
                        check=True, capture_output=True)
         checkpoint = self.root / 'results' / 'astt' / 'prepared_train' / 'checkpoints' / 'best.pth'
         self.assertTrue(checkpoint.is_file())
-        subprocess.run([sys.executable, str(base / 'test.py'), *common, '--split', 'val',
+        subprocess.run([sys.executable, str(base / 'scripts' / 'test.py'), *common, '--split', 'val',
                         '--checkpoint', str(checkpoint), '--experiment-name', 'prepared_val'],
                        check=True, capture_output=True)
         metrics = json.loads((self.root / 'results' / 'astt' / 'prepared_val' / 'metrics.json').read_text())
@@ -269,7 +269,7 @@ class AnnotationTests(unittest.TestCase):
         import torch
         report = export_dataset(self.sources[:2], self.root / 'preflight_data')
         base = PROJECT_ROOT / 'benchmark' / 'ASTT'
-        command = [sys.executable, str(base / 'train.py'), '--data-dir', report['output'],
+        command = [sys.executable, str(base / 'scripts' / 'train.py'), '--data-dir', report['output'],
                    '--output-dir', str(self.root / 'results'), '--experiment-name', 'short_check',
                    '--device', 'cpu', '--batch-size', '4', '--epochs', '1', '--selection', 'auc',
                    '--image-size', '32', '--patch-size', '16', '--emb-dim', '32', '--mlp-dim', '64',

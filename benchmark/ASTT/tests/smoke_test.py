@@ -26,7 +26,7 @@ from benchmark.ASTT.src.runner import auc_score, evaluate, create_output, load_c
 
 def main():
     torch.set_num_threads(2)
-    for script in ['train.py', 'test.py', 'tools/extract_frames.py']:
+    for script in ['scripts/train.py', 'scripts/test.py', 'tools/extract_frames.py']:
         subprocess.run([sys.executable, str(Path(__file__).resolve().parents[1]/script), '--help'], check=True, stdout=subprocess.DEVNULL)
     config = dict(image_size=32, patch_size=16, emb_dim=32, mlp_dim=64,
                   num_heads=4, spatial_layers=1, temporal_layers=1, num_frames=4, dropout_rate=0.)
@@ -106,11 +106,11 @@ def main():
         training_args = ['--epochs','2','--image-size','32','--patch-size','16','--emb-dim','32',
             '--mlp-dim','64','--num-heads','4','--spatial-layers','1','--temporal-layers','1','--dropout-rate','0']
         base = Path(__file__).resolve().parents[1]
-        subprocess.run([sys.executable,str(base/'train.py'),*common,*training_args,
+        subprocess.run([sys.executable,str(base/'scripts'/'train.py'),*common,*training_args,
             '--experiment-name','cli_train'],check=True)
         checkpoint_path = root/'output'/'astt'/'cli_train'/'checkpoints'/'best.pth'
         assert checkpoint_path.is_file()
-        subprocess.run([sys.executable,str(base/'test.py'),*common,'--checkpoint',str(checkpoint_path),
+        subprocess.run([sys.executable,str(base/'scripts'/'test.py'),*common,'--checkpoint',str(checkpoint_path),
             '--experiment-name','cli_test'],check=True)
         assert (root/'output'/'astt'/'cli_test'/'events.csv').is_file()
         # Simulate an interrupted second epoch; resume from the real epoch-1 state.
@@ -130,7 +130,7 @@ def main():
         finally:
             runner.evaluate = original_evaluate
         resume_path = root/'output'/'astt'/'interrupted'/'checkpoints'/'last.pth'
-        subprocess.run([sys.executable,str(base/'train.py'),*common,*training_args,
+        subprocess.run([sys.executable,str(base/'scripts'/'train.py'),*common,*training_args,
             '--resume',str(resume_path),'--experiment-name','resumed'],check=True)
         assert (root/'output'/'astt'/'resumed'/'checkpoints'/'best.pth').is_file()
         video_path = root/'short.mp4'
@@ -139,7 +139,7 @@ def main():
         for frame in range(20):
             video_writer.write(np.full((32,32,3),frame*10,np.uint8))
         video_writer.release()
-        subprocess.run([sys.executable,str(base/'scripts'/'extract_frames.py'),str(video_path),
+        subprocess.run([sys.executable,str(base/'tools'/'extract_frames.py'),str(video_path),
             '--data-dir',str(root/'extracted'),'--fps','10','--name','extracted_clip'],check=True)
         assert len(list((root/'extracted'/'astt'/'train'/'extracted_clip').glob('*.jpg'))) == 10
         (root/'frames'/'a'/'frame_3.jpg').unlink()
