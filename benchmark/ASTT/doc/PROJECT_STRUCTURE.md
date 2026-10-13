@@ -24,7 +24,6 @@ ASTT/
 │   ├── prepare_dataset.py  # 影片標記 GUI、分組預覽與資料匯出入口
 │   ├── extract_frames.py   # 影片抽幀與來源幀號／時間 manifest
 │   └── verify_origin.py    # 驗證官方快照的檔案清單與 SHA-256
-├── tests/                  # 模型、標記、推論及原檔保護測試
 ├── doc/                    # 方法、資料格式、操作說明、來源紀錄
 ├── data/prepared/          # 匯出的版本資料集，不納入 Git
 ├── output/                 # 標記與影片結果，不納入 Git
@@ -35,7 +34,7 @@ ASTT/
 └── .gitignore、.gitattributes # 資料忽略與原檔換行保護
 ```
 
-正式操作使用 `scripts/`；抽幀與資料準備使用 `tools/`；自我檢查使用 `tests/smoke_test.py`。舊版參考與根目錄轉接檔已移除；功能實作集中在 `src/`。
+正式操作使用 `scripts/`；抽幀與資料準備使用 `tools/`；臨時驗證一律使用 Boom 根目錄的 `tmp/`，完成後清理。舊版參考與根目錄轉接檔已移除；功能實作集中在 `src/`。
 
 ## 原始碼與本機版
 
@@ -63,8 +62,6 @@ python benchmark/ASTT/scripts/test.py --help
 python benchmark/ASTT/scripts/inference.py --help
 python benchmark/ASTT/tools/prepare_dataset.py --help
 python benchmark/ASTT/tools/verify_origin.py
-python -m unittest discover -s benchmark/ASTT/tests -p "test_*.py"
-python benchmark/ASTT/tests/smoke_test.py
 ```
 
 實際訓練與資料準備見 [START_HERE.md](START_HERE.md)、[RUN_SETTINGS.md](RUN_SETTINGS.md) 及 [DATASET_PREPARATION.md](DATASET_PREPARATION.md)。Boom 的 YAML 不控制 ASTT。

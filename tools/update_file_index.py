@@ -138,7 +138,7 @@ def main():
         '| models | 預訓練權重、checkpoint 與 ONNX，不提交大型模型。 |',
         '| asset | UI、字型、圖示與地圖資源；大型地圖不提交。 |',
         '| output | 離線、即時、訓練與比較結果，不提交。 |',
-        '| tests | 本機驗證程式；目前根 .gitignore 排除，未更改此規則。 |',
+        '| tmp | 臨時測試程式、資料與產物，執行後立即刪除，不納入 Git。 |',
         '| X-AnyLabeling、cvat | 外部標註軟體；不修改、不加入 Boom Git。 |',
         '', '更新索引：`python tools/update_file_index.py`（使用 boom 環境）。'])
     (ROOT/'doc/FILE_INDEX.md').write_text('\n'.join(rows)+'\n', encoding='utf-8')

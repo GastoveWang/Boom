@@ -13,6 +13,6 @@
 
 ## 碩論比較專案
 
-新的獨立專案可放在根目錄的 `benchmark/<專案名稱>/`，保留各專案原本的目錄、授權和文件。除 `benchmark/ASTT/` 已納入 Boom Git 外，其他比較專案預設不追蹤。ASTT 使用一般原始碼目錄，不是巢狀 Git 或 submodule；ASTT 按 Boom 分工整理為 scripts、src、tools、tests 與 doc；官方未修改原始碼保存在 origin/，上游資訊見 origin/README.md。Boom 的偵測程式和輸出仍分別放在 `src/boom/` 與 `output/`。
+新的獨立專案可放在根目錄的 `benchmark/<專案名稱>/`，保留各專案原本的目錄、授權和文件。除 `benchmark/ASTT/` 已納入 Boom Git 外，其他比較專案預設不追蹤。ASTT 使用一般原始碼目錄，不是巢狀 Git 或 submodule；ASTT 按 Boom 分工整理為 scripts、src、tools 與 doc；官方未修改原始碼保存在 origin/，上游資訊見 origin/README.md。Boom 的偵測程式和輸出仍分別放在 `src/boom/` 與 `output/`。
 
 現有的 `X-AnyLabeling/` 保留在根目錄，不移動。

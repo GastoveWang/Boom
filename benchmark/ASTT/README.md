@@ -2,7 +2,7 @@
 
 # ASTT for Boom
 
-ASTT 是用連續影格預測下一幀的異常偵測方法；本機版用於驗證荒野煙霧資料上的效果。正式模型為 **STE＋TTE＋CSA**，採用「入口、平坦 src 核心、tools、tests、doc」的傳統結構，UI 集中在 src/ui。
+ASTT 是用連續影格預測下一幀的異常偵測方法；本機版用於驗證荒野煙霧資料上的效果。正式模型為 **STE＋TTE＋CSA**，採用「入口、平坦 src 核心、tools、doc」的傳統結構，UI 集中在 src/ui。
 
 `origin/` 是官方固定版本的完整原始碼，禁止修改；`src/` 是本機適配與擴充版本。正式入口集中在 `scripts/`，資料工具在 `tools/`，操作文件在 `doc/`。正式程式不匯入 origin。
 

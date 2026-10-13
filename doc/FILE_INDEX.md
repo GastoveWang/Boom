@@ -33,9 +33,6 @@ Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統，目
 | [benchmark/ASTT/src/ui/__init__.py](../benchmark/ASTT/src/ui/__init__.py) | ASTT 資料標記介面套件。 |
 | [benchmark/ASTT/src/ui/annotation_app.py](../benchmark/ASTT/src/ui/annotation_app.py) | 影片播放、異常區段標記與資料準備 GUI。 |
 | [benchmark/ASTT/scripts/test.py](../benchmark/ASTT/scripts/test.py) | 正式驗證／測試入口：載入本機 checkpoint，產生異常候選結果。 |
-| [benchmark/ASTT/tests/__init__.py](../benchmark/ASTT/tests/__init__.py) | ASTT 自我檢查套件標記，區別根目錄相容入口。 |
-| [benchmark/ASTT/tests/smoke_test.py](../benchmark/ASTT/tests/smoke_test.py) | 暫存資料上的模型、事件、CLI、續訓與抽幀整體自我檢查。 |
-| [benchmark/ASTT/tests/test_annotations.py](../benchmark/ASTT/tests/test_annotations.py) | 區段標記、標籤對齊、分組、安全匯出與 GUI 測試。 |
 | [benchmark/ASTT/tools/__init__.py](../benchmark/ASTT/tools/__init__.py) | ASTT 資料準備工具套件。 |
 | [benchmark/ASTT/tools/extract_frames.py](../benchmark/ASTT/tools/extract_frames.py) | 正式 MP4 抽幀工具及來源幀號／時間 manifest。 |
 | [benchmark/ASTT/tools/prepare_dataset.py](../benchmark/ASTT/tools/prepare_dataset.py) | ASTT 標記 GUI、分組預覽與 .npy 匯出入口。 |
@@ -144,7 +141,7 @@ Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統，目
 | models | 預訓練權重、checkpoint 與 ONNX，不提交大型模型。 |
 | asset | UI、字型、圖示與地圖資源；大型地圖不提交。 |
 | output | 離線、即時、訓練與比較結果，不提交。 |
-| tests | 本機驗證程式；目前根 .gitignore 排除，未更改此規則。 |
+| tmp | 臨時測試程式、資料與產物，執行後立即刪除，不納入 Git。 |
 | X-AnyLabeling、cvat | 外部標註軟體；不修改、不加入 Boom Git。 |
 
 更新索引：`python tools/update_file_index.py`（使用 boom 環境）。

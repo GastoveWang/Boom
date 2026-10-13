@@ -48,7 +48,6 @@ Boom **定位擴充**：channel-mean squared-error spatial maps、threshold/morp
 conda activate boom
 cd C:\Users\roger\IDEA\Boom
 python -m pip install -r benchmark/ASTT/requirements.txt
-python benchmark/ASTT/tests/smoke_test.py
 ```
 
 可另建 Python 3.10–3.13 環境。GPU 請先依 PyTorch 官方安裝方式選擇符合硬體的 torch build；`requirements.txt` 不固定 CUDA wheel。保留的上游 ablation 若要另行研究，還需 matching torchvision 與 timm，且那些腳本尚未整理成正式本機入口。

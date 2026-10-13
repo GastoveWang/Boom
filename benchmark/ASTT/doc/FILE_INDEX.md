@@ -33,11 +33,6 @@
 | [src/video_inference.py](../src/video_inference.py) | 新影片串流、批次推論、30 FPS 標記 MP4 與 CSV。 |
 | [doc/START_HERE.md](START_HERE.md) | 整理後的正式入口、閱讀順序與訓練／測試快速操作。 |
 | [scripts/test.py](../scripts/test.py) | 正式驗證／測試入口：載入本機 checkpoint，產生異常候選結果。 |
-| [tests/__init__.py](../tests/__init__.py) | ASTT 自我檢查套件標記，區別根目錄相容入口。 |
-| [tests/smoke_test.py](../tests/smoke_test.py) | 暫存資料上的模型、事件、CLI、續訓與抽幀整體自我檢查。 |
-| [tests/test_annotations.py](../tests/test_annotations.py) | 暫存來源上的標記、標籤對齊、分組、匯出與 GUI 測試。 |
-| [tests/test_origin.py](../tests/test_origin.py) | 驗證快照完整且不被文件註記工具改寫。 |
-| [tests/test_video_inference.py](../tests/test_video_inference.py) | 影片重採樣、模型窗口、事件與 MP4 輸出測試。 |
 | [tools/__init__.py](../tools/__init__.py) | ASTT 資料準備工具套件。 |
 | [tools/extract_frames.py](../tools/extract_frames.py) | 正式 MP4 抽幀工具及來源幀號／時間 manifest。 |
 | [tools/prepare_dataset.py](../tools/prepare_dataset.py) | 時間區段標記 GUI 入口，以及專案預覽／匯出 CLI。 |

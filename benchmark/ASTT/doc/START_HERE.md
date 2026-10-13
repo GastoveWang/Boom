@@ -13,7 +13,6 @@
 | 載入權重測試／輸出異常候選 | scripts/test.py |
 | 用權重直接跑新影片、輸出標記 MP4 | scripts/inference.py |
 | 從影片抽幀 | tools/extract_frames.py |
-| 程式自我檢查 | tests/smoke_test.py |
 
 其餘 `src/` 由入口呼叫。`origin/` 是禁止修改的官方快照，不參與正式流程。舊版參考與轉接入口已移除。原檔校驗：`python benchmark/ASTT/tools/verify_origin.py`。
 
@@ -50,7 +49,6 @@ python benchmark/ASTT/tools/prepare_dataset.py
 ```powershell
 conda activate boom
 python -m pip install -r benchmark/ASTT/requirements.txt
-python benchmark/ASTT/tests/smoke_test.py
 python benchmark/ASTT/scripts/train.py --experiment-name astt_full_001 --epochs 30 --batch-size 8 --device cuda
 python benchmark/ASTT/scripts/test.py --split val --checkpoint output/astt/astt_full_001/checkpoints/best.pth --experiment-name astt_full_val_001 --batch-size 8 --device cuda
 ```

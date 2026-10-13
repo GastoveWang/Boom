@@ -104,6 +104,4 @@ python benchmark/ASTT/tools/prepare_dataset.py --project "benchmark/ASTT/output/
 # 載入專案繼續標記
 python benchmark/ASTT/tools/prepare_dataset.py --project "benchmark/ASTT/output/annotations/你的標記專案.json"
 
-# 工具自我檢查，僅使用系統暫存資料
-python benchmark/ASTT/tests/test_annotations.py
 ```

@@ -39,7 +39,7 @@ Boom/
 ├── output/
 │   ├── offline/                   # 離線結果
 │   └── realtime/                  # 即時結果
-└── tests/                           # 驗證程式
+└── tmp/                             # 臨時驗證，完成後立即清理
 ```
 
 ## 執行
