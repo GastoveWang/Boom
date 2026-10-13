@@ -1,9 +1,4 @@
-# 檔案功能：將原畫面、誤差熱圖、候選框疊圖與逐幀分數曲線組成成果影片。
-# 所屬分工：ui：只負責呈現；不改變模型分數、候選框或事件判斷。
-# 輸入／輸出：原畫面、像素誤差、來源座標候選框、分數序列 → 1920×900 BGR 畫面。
-# 執行方式：由 runtime/video_inference.py 呼叫 render_results()。
-# 設定與說明：熱圖固定色階，曲線顯示最近十秒原始 MSE；見 doc/VIDEO_INFERENCE.md。
-
+# 檔案功能：原圖、熱圖、疊圖與分數曲線的畫面合成。
 import cv2
 import numpy as np
 

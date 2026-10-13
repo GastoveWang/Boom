@@ -2,7 +2,7 @@
 
 # ASTT 從這裡開始
 
-先看 [doc/PROJECT_STRUCTURE.md](doc/PROJECT_STRUCTURE.md) 的 Boom 對照表，了解各層做什麼；再看 [doc/RUN_SETTINGS.md](doc/RUN_SETTINGS.md) 調整參數。完整資料格式與模型解讀在 [doc/README_LOCAL.md](doc/README_LOCAL.md)。
+先看 [doc/PROJECT_STRUCTURE.md](doc/PROJECT_STRUCTURE.md) 的目錄與資料流，了解各模組用途；再看 [doc/RUN_SETTINGS.md](doc/RUN_SETTINGS.md) 調整參數。完整資料格式與模型解讀在 [doc/README_LOCAL.md](doc/README_LOCAL.md)。
 
 ## 你會直接執行的檔案
 
@@ -15,7 +15,7 @@
 | 從影片抽幀 | tools/extract_frames.py |
 | 程式自我檢查 | tests/smoke_test.py；原 smoke_test.py 也可用 |
 
-其餘 `src/` 由入口呼叫。`legacy/` 是作者的歷史參考，正式實驗不需要執行。
+其餘 `src/` 由入口呼叫。`origin/` 是禁止修改的官方快照；`legacy/` 保留先前已修改的歷史參考；兩者都不參與正式流程。原檔校驗：`python benchmark/ASTT/tools/verify_origin.py`。
 
 用權重跑一支新影片，不需標記或建立資料集：
 

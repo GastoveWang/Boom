@@ -22,11 +22,11 @@ if str(PROJECT_ROOT) not in sys.path:
 import cv2
 import numpy as np
 
-from benchmark.ASTT.src.runtime.annotations import (
+from benchmark.ASTT.src.annotations import (
     TARGET_FPS, ExportCancelled, Source, export_dataset, load_project, normalize_intervals,
     plan_split, sample_indices, save_project, timeline_count,
 )
-from benchmark.ASTT.src.runtime.dataset import VideoDataset
+from benchmark.ASTT.src.dataset import VideoDataset
 
 
 class AnnotationTests(unittest.TestCase):

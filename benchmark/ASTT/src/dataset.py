@@ -1,9 +1,4 @@
-# 檔案功能：按影片建立連續窗口、檢查缺幀／標籤與可選 ECC 配準。
-# 所屬分工：runtime：資料讀取，相當於 Boom 的 runtime/inputs.py。
-# 輸入／輸出：影格資料夾與 binary 標籤 → 歷史 inputs、下一幀 target 及影格資訊。
-# 執行方式：由 runner 建立 VideoDataset，不直接執行。
-# 設定與說明：資料格式與 normal-only 限制見 doc/README_LOCAL.md；registration 由 CLI 控制。
-
+# 檔案功能：連續影格窗口、標籤／缺幀檢查與可選 ECC 配準。
 """Per-video future-frame windows. No concatenation across videos or gaps."""
 from pathlib import Path
 import re

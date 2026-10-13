@@ -2,7 +2,7 @@
 
 # ASTT 執行設定
 
-所有指令從 **Boom 根目錄** 執行。正式參數集中在 [../src/config/cli.py](../src/config/cli.py)，抽幀參數在 [../tools/extract_frames.py](../tools/extract_frames.py)。`legacy/config.py` 與 Boom 的 YAML 不影響正式 ASTT。
+所有指令從 **Boom 根目錄** 執行。正式參數集中在 [../src/config.py](../src/config.py)，抽幀參數在 [../tools/extract_frames.py](../tools/extract_frames.py)。`legacy/config.py` 與 Boom 的 YAML 不影響正式 ASTT。
 
 完整 CLI 表沿用 [Boom 執行設定索引](../../../doc/RUN_SETTINGS.md#astt-訓練-cli)，也可以查看：
 

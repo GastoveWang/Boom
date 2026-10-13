@@ -2,4 +2,4 @@
 # 所屬分工：不在此處自動載入模型或歷史依賴。
 # 輸入／輸出：套件匯入；不產生實驗輸出。
 # 執行方式：不直接執行。
-# 設定與說明：正式參數見 src/config/cli.py；說明見 doc/RUN_SETTINGS.md。
+# 設定與說明：正式參數見 src/config.py；說明見 doc/RUN_SETTINGS.md。

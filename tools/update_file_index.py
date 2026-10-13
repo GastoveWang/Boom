@@ -76,6 +76,9 @@ def purpose(path):
 
 
 def annotate(path, description):
+    # The upstream snapshot must remain byte-for-byte identical to its source.
+    if path.is_relative_to(ROOT / 'benchmark/ASTT/origin'):
+        return
     raw = path.read_bytes()
     bom = raw.startswith(b'\xef\xbb\xbf')
     text = raw.decode('utf-8-sig')
@@ -86,7 +89,7 @@ def annotate(path, description):
     if len(lines) > position and re.search(r'coding[:=]', lines[position]):
         position += 1
     rel = path.relative_to(ROOT).as_posix()
-    reference = 'doc/RUN_SETTINGS.md；ASTT 正式參數見 runner.py parser()，歷史 config.py 不影響正式流程。' if rel.startswith('benchmark/ASTT/') else 'doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。'
+    reference = 'benchmark/ASTT/doc/RUN_SETTINGS.md；正式參數見 src/config.py。' if rel.startswith('benchmark/ASTT/') else 'doc/RUN_SETTINGS.md；非入口模組由對應 runner 傳入設定。'
     lines[position:position] = ['# 檔案功能：' + description + newline, '# 執行設定：' + reference + newline]
     result = ''.join(lines).encode('utf-8')
     if bom:
@@ -112,7 +115,8 @@ def main():
     files = list(ROOT.glob('*.py'))
     for folder in ('src', 'tools', 'benchmark/ASTT'):
         files.extend((ROOT/folder).rglob('*.py'))
-    files = sorted(files)
+    files = sorted(path for path in files
+                   if not path.is_relative_to(ROOT / 'benchmark/ASTT/origin'))
     for path in files:
         annotate(path, purpose(path))
     other = [ROOT/'pyproject.toml', ROOT/'.gitignore', ROOT/'AGENTS.md']

@@ -21,9 +21,9 @@ if str(PROJECT_ROOT) not in sys.path:
 import cv2
 import numpy as np
 import torch
-from benchmark.ASTT.src.detection.model import VisionTransformer
-from benchmark.ASTT.src.runtime.annotations import Source, sample_indices
-from benchmark.ASTT.src.runtime.video_inference import infer_video, pixel_box, video_frames
+from benchmark.ASTT.src.model import VisionTransformer
+from benchmark.ASTT.src.annotations import Source, sample_indices
+from benchmark.ASTT.src.video_inference import infer_video, pixel_box, video_frames
 from benchmark.ASTT.src.ui.inference_view import VIEW_WIDTH, VIEW_HEIGHT, render_results
 from argparse import Namespace
 

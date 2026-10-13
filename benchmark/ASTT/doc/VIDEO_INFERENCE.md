@@ -41,4 +41,4 @@ python benchmark/ASTT/inference.py --video "C:\videos\new_video.mp4" --checkpoin
 
 `--threshold` 預設 0.1、`--min-area` 預設 25（模型像素面積）、`--min-event-frames` 預設 3。若訓練使用 `--registration`，推論也必須加上它；本次 `astt_artillery_shell_v1_001` 沒有使用配準。時間換算使用固定原始 FPS；VFR 影片請先轉為固定幀率。
 
-程式分工：`inference.py` 是 CLI 入口；`src/runtime/video_inference.py` 負責串流、推論與影片輸出；模型與事件合併沿用既有 `detection/model.py` 和 `localization/candidates.py`。
+程式分工：`inference.py` 是 CLI 入口；`src/video_inference.py` 負責串流、推論與影片輸出；模型與事件合併沿用既有 `detection/model.py` 和 `localization/candidates.py`。

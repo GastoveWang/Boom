@@ -1,9 +1,4 @@
-# 檔案功能：完整 STE＋TTE＋CSA 與下一幀預測 decoder。
-# 所屬分工：detection：相當於 Boom 的演算法層；目前是離線 ASTT 主模型。
-# 輸入／輸出：B×4×3×H×W 歷史影格 → B×3×H×W 下一幀預測（幀數可設定）。
-# 執行方式：由 runtime/runner.py 建立 VisionTransformer，不直接執行。
-# 設定與說明：模型參數見 config/cli.py；CSA 公式解讀見 doc/README_LOCAL.md。
-
+# 檔案功能：STE、TTE、CSA 與 Decoder，從歷史影格預測下一幀。
 """Final ASTT: shared STE -> chronological TTE -> temporal CSA -> decoder.
 
 See README_LOCAL.md for the dimensionally explicit interpretation of Eq. 11.

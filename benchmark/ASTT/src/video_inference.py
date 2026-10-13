@@ -1,9 +1,4 @@
-# 檔案功能：單支影片以固定 30 FPS 串流推論，保存原圖／熱圖／疊圖／分數的成果影片。
-# 所屬分工：runtime：執行環境；模型與候選框／事件邏輯沿用 detection、localization。
-# 輸入／輸出：新影片、ASTT checkpoint → annotated.mp4、CSV、scores.npy、metrics.json。
-# 執行方式：由 benchmark/ASTT/inference.py 呼叫 infer_video()。
-# 設定與說明：30 FPS 與標記匯出共用對應表；不輸出無標籤影片的 AUC。
-
+# 檔案功能：新影片串流、批次推論、30 FPS 標記 MP4 與 CSV。
 from collections import deque
 import csv
 import json
@@ -18,9 +13,9 @@ import torch
 from .annotations import Source, TARGET_FPS, sample_indices
 from .dataset import align_inputs
 from .runner import create_output, device_for, load_checkpoint, save_config, validate_args
-from ..detection.model import VisionTransformer
-from ..localization.candidates import candidate_boxes, EventMerger
-from ..ui.inference_view import VIEW_WIDTH, VIEW_HEIGHT, heatmap_image, render_results
+from .model import VisionTransformer
+from .candidates import candidate_boxes, EventMerger
+from .ui.inference_view import VIEW_WIDTH, VIEW_HEIGHT, heatmap_image, render_results
 
 
 def video_frames(source, count):

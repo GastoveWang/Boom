@@ -1,74 +1,69 @@
-<!-- 檔案功能：ASTT 目錄結構、流程及 Boom 功能對照。 -->
-
 # ASTT 專案結構
 
-與 Boom 相同：**根目錄執行入口 → src 演算法與流程 → tools／tests／doc 輔助目錄**。這裡只整理功能分工，完整模型與資料／輸出格式延續原本本機版。
+本機版採用一般 Python 專案的「執行入口、核心程式、工具、測試、文件」結構。核心以單一模組負責一類工作，只有桌面介面使用 `ui/` 子套件。
 
 ```text
 ASTT/
-├── train.py                       # 正式訓練入口
-├── test.py                        # 正式驗證／測試入口
-├── inference.py                   # 用權重直接跑新影片並保存標記 MP4
-├── smoke_test.py                  # 自我檢查相容入口
-├── README.md、START_HERE.md        # 總覽、快速操作
-├── requirements.txt              # 正式流程依賴
-├── src/
-│   ├── config/cli.py              # 命令列參數、完整模型預設值與路徑
-│   ├── detection/model.py         # STE＋TTE＋CSA → 預測下一幀
-│   ├── runtime/dataset.py         # 連續窗口、標籤／缺幀檢查、ECC
-│   ├── runtime/annotations.py     # 人工區段、來源分組與安全匯出
-│   ├── runtime/runner.py          # 訓練、驗證、推論、checkpoint／輸出
-│   ├── runtime/video_inference.py # 30 FPS 影片串流、候選框、MP4／CSV
-│   ├── ui/annotation_app.py       # 影片標記桌面介面
-│   ├── ui/inference_view.py       # 原畫面／熱圖／疊圖與分數曲線的成果版面
-│   └── localization/candidates.py # 誤差候選框、事件編號與去抖合併
-├── tools/prepare_dataset.py       # 標記 GUI／分組／.npy 匯出入口
-├── tools/extract_frames.py        # 影片抽幀與 frames.csv
-├── tests/smoke_test.py            # 暫存資料整體自我檢查
-├── tests/test_annotations.py      # 標記、分組與匯出相容性測試
-├── tests/test_video_inference.py  # 新影片推論、時間軸與輸出測試
-├── data/prepared/                 # 標記工具匯出的版本資料集（執行後建立）
-├── output/annotations/            # 人工時間區段標記 JSON（執行後建立）
-├── doc/
-│   ├── PROJECT_STRUCTURE.md       # 你正在讀的結構說明
-│   ├── FILE_INDEX.md              # 每個檔案的用途
-│   ├── DATASET_PREPARATION.md      # 標記操作與資料版本使用方式
-│   ├── RUN_SETTINGS.md            # 正式參數與操作
-│   ├── VIDEO_INFERENCE.md         # 用權重跑新影片
-│   └── README_LOCAL.md            # 方法、格式、輸出與限制
-├── legacy/                       # 作者舊模型、消融腳本、工具與 README
-└── model.py、dataset.py、runner.py、localization.py
-                                  # 舊 import 相容層；實作在 src
+├── origin/                 # 官方原始碼完整快照，禁止修改
+├── src/                    # 本機適配版核心程式
+│   ├── config.py           # 訓練／測試 CLI、模型預設參數、預設路徑
+│   ├── model.py            # STE、TTE、CSA、Decoder 與下一幀預測模型
+│   ├── dataset.py          # 連續影格窗口、標籤與缺幀檢查、ECC 配準
+│   ├── annotations.py      # 人工標記、30 FPS 時間軸、來源分組、資料匯出
+│   ├── candidates.py       # 高誤差候選框、事件編號與跨影格合併
+│   ├── runner.py           # 訓練、驗證、測試、checkpoint 與結果保存
+│   ├── video_inference.py  # 新影片串流、批次推論、MP4／CSV 輸出
+│   └── ui/
+│       ├── annotation_app.py # Tkinter 影片標記介面
+│       └── inference_view.py # 原圖、熱圖、疊圖與分數曲線版面
+├── train.py                # 正式訓練入口
+├── test.py                 # 已準備資料集的驗證／測試入口
+├── inference.py            # 用本機權重直接跑新影片
+├── tools/
+│   ├── prepare_dataset.py  # 影片標記 GUI、分組預覽與資料匯出入口
+│   ├── extract_frames.py   # 影片抽幀與來源幀號／時間 manifest
+│   └── verify_origin.py    # 驗證官方快照的檔案清單與 SHA-256
+├── tests/                  # 模型、標記、推論及原檔保護測試
+├── doc/                    # 方法、資料格式、操作說明、來源紀錄
+├── legacy/                 # 先前已修改過的歷史參考，不是官方原檔
+├── data/prepared/          # 匯出的版本資料集，不納入 Git
+├── output/                 # 標記與影片結果，不納入 Git
+├── requirements.txt
+├── README.md、START_HERE.md
+└── model.py、dataset.py、runner.py、localization.py、smoke_test.py
+                            # 舊匯入／指令相容層
 ```
 
-`scripts/extract_frames.py` 與根目錄 `README_LOCAL.md` 也保留舊指令／連結。功能修改請進入 `src/`，不要修改相容層。
+`scripts/extract_frames.py` 也是舊指令相容層。新功能請修改 `src/` 或 `tools/` 的實作；相容層不放第二份演算法。
 
-## 與 Boom 對照
+## 原始碼與本機版
 
-| 分工 | Boom | ASTT | 你什麼時候看它 |
-|---|---|---|---|
-| 執行入口 | run_offline.py／run_realtime.py | train.py／test.py | 開始實驗 |
-| 執行設定 | src/boom/config、configs | src/config/cli.py | 改模型大小、epochs、路徑、閾值 |
-| 偵測演算法 | src/boom/detection | src/detection/model.py | 理解 STE／TTE／CSA |
-| 資料讀取 | src/boom/runtime/inputs.py | src/runtime/dataset.py | 檢查影格窗口與標籤 |
-| 執行流程 | src/boom/runtime/runner.py | src/runtime/runner.py | 看訓練、推論與結果保存 |
-| 定位 | src/boom/localization | src/localization/candidates.py | ASTT 僅有影像候選框，沒有 GPS |
-| 資料工具 | tools | tools | 影片標記、自動分組、抽幀與標籤 |
-| 操作介面 | src/boom/ui | src/ui/annotation_app.py | ASTT 的離線資料標記介面 |
-| 驗證 | tests | tests | 確認程式能正常跑通 |
-| 說明 | doc | doc | 看設定、方法與限制 |
-| 模型權重 | models、output | Boom/output/astt/<experiment>/checkpoints | 訓練產生的權重 |
+`origin/` 保存 [Tungufm/ASTT](https://github.com/Tungufm/ASTT) 的固定提交 `1d05305a94fb47b33897c7aa085c5351bcbbc8f9`，含全部 18 個版本控制檔案，內容與原始 Git blob 相同。來源與校驗值在 [ORIGIN_MANIFEST.json](ORIGIN_MANIFEST.json)；說明在 [ORIGIN.md](ORIGIN.md)。不要在快照中加註解、格式化或執行會生成快取／結果的指令。
 
-ASTT 正式設定使用 CLI；Boom 的 `configs/*.yaml` 不會控制 ASTT。標記 GUI 用於離線資料準備，ASTT 尚無即時偵測 runner 或 GPS 介面，目錄名稱相似不表示它已具有 Boom 的全部能力。
+`src/` 是本機 STE＋TTE＋CSA 實作與 Boom 的資料準備、候選事件及輸出擴充。正式流程不匯入 `origin/` 或 `legacy/`。`legacy/` 保留先前加過註解與匯入調整的研究參考，以免丟失既有內容。
 
-## 正式資料流
+## 程式資料流
 
-資料準備：`tools/prepare_dataset.py` → `ui/annotation_app.py` 播放與人工標記 → `runtime/annotations.py` 依來源群組匯出影格、`.npy`、標記快照與分組報告。
+1. `tools/prepare_dataset.py` 呼叫 `ui/annotation_app.py` 標記影片；`annotations.py` 處理時間軸、來源分組及資料匯出。
+2. `train.py`／`test.py` 讀取 `config.py` 的參數，再呼叫 `runner.py`。
+3. `dataset.py` 提供歷史影格和下一幀 target；`model.py` 預測下一幀。
+4. `runner.py` 計算 MSE、更新權重、評估獨立 validation，保存 checkpoint、分數及結果。
+5. `inference.py` 呼叫 `video_inference.py` 直接讀新影片；`candidates.py` 將高誤差區域合併成候選事件，`ui/inference_view.py` 組合輸出畫面。
 
-1. `train.py`／`test.py` 使用 `config/cli.py` 讀取參數。
-2. `runtime/dataset.py` 從每支影片取得連續歷史幀與下一幀 target。
-3. `detection/model.py` 用歷史幀預測下一幀。
-4. `runtime/runner.py` 計算預測與真實 target 的 MSE；訓練時更新權重。
-5. 輸出階段由 `localization/candidates.py` 擷取高誤差候選框、合併事件，再保存分數、熱圖、標註圖片與 CSV。
+候選框代表高預測誤差，不能直接當成確認煙霧；本機 ASTT 尚未接入 Boom 即時 runner 或 GPS 地理定位。演算法、CLI、checkpoint 權重欄位、資料／輸出格式維持既有行為。
 
-第一輪實驗使用完整主模型。歷史 `legacy/` 供查閱來源與消融研究，正式 train/test 不匯入它。
+## 執行與驗證
+
+從 Boom 根目錄、已安裝 requirements 的環境執行：
+
+```powershell
+python benchmark/ASTT/train.py --help
+python benchmark/ASTT/test.py --help
+python benchmark/ASTT/inference.py --help
+python benchmark/ASTT/tools/prepare_dataset.py --help
+python benchmark/ASTT/tools/verify_origin.py
+python -m unittest discover -s benchmark/ASTT/tests -p "test_*.py"
+python benchmark/ASTT/smoke_test.py
+```
+
+實際訓練與資料準備見 [START_HERE.md](../START_HERE.md)、[RUN_SETTINGS.md](RUN_SETTINGS.md) 及 [DATASET_PREPARATION.md](DATASET_PREPARATION.md)。Boom 的 YAML 不控制 ASTT。

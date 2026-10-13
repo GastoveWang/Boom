@@ -1,8 +1,8 @@
 <!-- 檔案功能：上游歷史檔案分類、用途與執行限制。 -->
 
-# ASTT 上游歷史參考
+# ASTT 先前的本機歷史參考
 
-這裡保存作者的舊模型、消融實驗與工具。正式煙霧資料實驗使用父目錄的 `train.py`、`test.py`。
+這裡保留先前加過中文註解與本機匯入調整的舊模型、消融實驗與工具，並非未修改的原始碼。完整官方原檔改存於 [../origin/](../origin/)，來源與校驗見 [../doc/ORIGIN.md](../doc/ORIGIN.md)。正式煙霧資料實驗使用父目錄的 `train.py`、`test.py`，不匯入本目錄。
 
 | 分組 | 檔案 | 用途 |
 |---|---|---|
@@ -14,4 +14,4 @@
 
 保留原演算法及 sibling import；歷史入口可找到父目錄的正式 model 相容模組。這些腳本原本仍含作者路徑、CUDA 寫法與舊模型介面，**整理目錄不代表已完成本機化**。它們可能需要 torchvision、timm、sklearn、TensorFlow 或 JAX；正式流程不需要安裝這些歷史依賴。`check_jax.py` 的上游 `src.*` 匯入也仍是研究參考。
 
-不要在此處的 `config.py` 調整正式實驗。正式參數在 [../src/config/cli.py](../src/config/cli.py)。
+不要在此處的 `config.py` 調整正式實驗。正式參數在 [../src/config.py](../src/config.py)。

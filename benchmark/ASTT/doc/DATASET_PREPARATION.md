@@ -15,7 +15,7 @@ python benchmark/ASTT/tools/prepare_dataset.py
 
 工具、介面與資料準備邏輯都放在 ASTT 裡。也可在 `benchmark/ASTT/` 目錄執行 `python tools/prepare_dataset.py`；預設標記紀錄與資料集位置由程式推導，兩種啟動方式相同。
 
-使用現有 NumPy、OpenCV 與 Python 內建 Tkinter，無需新增套件。程式分工：`tools/prepare_dataset.py` 是入口；`src/ui/annotation_app.py` 負責播放與操作；`src/runtime/annotations.py` 負責標籤、分組與安全匯出。
+使用現有 NumPy、OpenCV 與 Python 內建 Tkinter，無需新增套件。程式分工：`tools/prepare_dataset.py` 是入口；`src/ui/annotation_app.py` 負責播放與操作；`src/annotations.py` 負責標籤、分組與安全匯出。
 
 ## 標記一支影片
 

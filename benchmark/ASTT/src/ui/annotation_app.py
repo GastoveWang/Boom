@@ -1,9 +1,4 @@
-# 檔案功能：影片／連續影格播放、異常起訖標記、專案續編與資料集匯出桌面 GUI。
-# 所屬分工：ui：Tkinter 介面；標籤與切分邏輯在 runtime/annotations.py。
-# 輸入／輸出：固定 30 FPS 播放與標記 → 標記 JSON、新版 train／val（7:3）與 .npy。
-# 執行方式：python benchmark/ASTT/tools/prepare_dataset.py。
-# 設定與說明：快捷鍵、群組與輸出位置見 doc/DATASET_PREPARATION.md。
-
+# 檔案功能：Tkinter 影片播放、異常區段標記與匯出介面。
 import base64
 import copy
 from datetime import datetime
@@ -16,7 +11,7 @@ from tkinter import filedialog, messagebox, ttk
 
 import cv2
 
-from ..runtime.annotations import (TARGET_FPS, ExportCancelled, Source, export_dataset, load_project,
+from ..annotations import (TARGET_FPS, ExportCancelled, Source, export_dataset, load_project,
                                    normalize_intervals, plan_split, sample_indices, save_project)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]

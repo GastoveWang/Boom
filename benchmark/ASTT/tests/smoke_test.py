@@ -18,10 +18,10 @@ from argparse import Namespace
 import cv2
 import numpy as np
 import torch
-from benchmark.ASTT.src.runtime.dataset import VideoDataset
-from benchmark.ASTT.src.localization.candidates import EventMerger, candidate_boxes
-from benchmark.ASTT.src.detection.model import VisionTransformer, CrossAttention
-from benchmark.ASTT.src.runtime.runner import auc_score, evaluate, create_output, load_checkpoint
+from benchmark.ASTT.src.dataset import VideoDataset
+from benchmark.ASTT.src.candidates import EventMerger, candidate_boxes
+from benchmark.ASTT.src.model import VisionTransformer, CrossAttention
+from benchmark.ASTT.src.runner import auc_score, evaluate, create_output, load_checkpoint
 
 
 def main():
@@ -114,7 +114,7 @@ def main():
             '--experiment-name','cli_test'],check=True)
         assert (root/'output'/'astt'/'cli_test'/'events.csv').is_file()
         # Simulate an interrupted second epoch; resume from the real epoch-1 state.
-        from benchmark.ASTT.src.runtime import runner
+        from benchmark.ASTT.src import runner
         original_evaluate = runner.evaluate
         calls = [0]
         def interrupt_second_validation(*a, **kw):

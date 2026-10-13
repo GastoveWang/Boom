@@ -1,5 +1,5 @@
 # 檔案功能：載入 ASTT 權重，直接對一支新影片推論並輸出標記 MP4。
-# 所屬分工：根目錄入口；影片串流與事件輸出在 src/runtime/video_inference.py。
+# 所屬分工：根目錄入口；影片串流與事件輸出在 src/video_inference.py。
 # 輸入／輸出：影片與 best.pth → 30 FPS 標記影片、逐幀分數及候選事件紀錄。
 # 執行方式：python benchmark/ASTT/inference.py --video <影片> --checkpoint <權重>。
 # 設定與說明：不需標記／.npy；操作見 doc/VIDEO_INFERENCE.md。
@@ -14,7 +14,7 @@ ASTT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from benchmark.ASTT.src.runtime.video_inference import infer_video
+from benchmark.ASTT.src.video_inference import infer_video
 
 
 def main():

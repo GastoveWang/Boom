@@ -10,12 +10,14 @@ Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統，目
 |---|---|
 | [.gitignore](../.gitignore) | 版本控制／目錄保留設定。 |
 | [AGENTS.md](../AGENTS.md) | 專案目標、功能優先順序與修改／驗證原則。 |
+| [benchmark/ASTT/origin/](../benchmark/ASTT/origin/) | 官方原始碼完整快照，禁止修改；來源與校驗见 ASTT/doc/ORIGIN.md。 |
+| [benchmark/ASTT/tools/verify_origin.py](../benchmark/ASTT/tools/verify_origin.py) | 檢查官方快照檔案清單與 SHA-256。 |
 | [benchmark/ASTT/.gitignore](../benchmark/ASTT/.gitignore) | ASTT 快取、本地環境、標記紀錄與產生資料集的忽略規則。 |
 | [benchmark/ASTT/README.md](../benchmark/ASTT/README.md) | ASTT 本機專案總覽與文件入口。 |
 | [benchmark/ASTT/README_LOCAL.md](../benchmark/ASTT/README_LOCAL.md) | 舊本機說明連結，導向 doc/README_LOCAL.md。 |
 | [benchmark/ASTT/START_HERE.md](../benchmark/ASTT/START_HERE.md) | 整理後的正式入口、閱讀順序與訓練／測試快速操作。 |
 | [benchmark/ASTT/__init__.py](../benchmark/ASTT/__init__.py) | ASTT 外層套件標記。 |
-| [benchmark/ASTT/dataset.py](../benchmark/ASTT/dataset.py) | 舊匯入路徑相容入口；實作已移至 src/runtime/dataset.py。 |
+| [benchmark/ASTT/dataset.py](../benchmark/ASTT/dataset.py) | 舊匯入路徑相容入口；實作已移至 src/dataset.py。 |
 | [benchmark/ASTT/doc/FILE_INDEX.md](../benchmark/ASTT/doc/FILE_INDEX.md) | ASTT 每個檔案的用途與點擊入口。 |
 | [benchmark/ASTT/doc/DATASET_PREPARATION.md](../benchmark/ASTT/doc/DATASET_PREPARATION.md) | ASTT 異常區段標記、train／val 7:3 分組與 .npy 操作。 |
 | [benchmark/ASTT/doc/PROJECT_STRUCTURE.md](../benchmark/ASTT/doc/PROJECT_STRUCTURE.md) | ASTT 目錄結構、流程及 Boom 功能對照。 |
@@ -38,23 +40,20 @@ Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統，目
 | [benchmark/ASTT/legacy/train_val_UIT_ADrone_baseline_ca.py](../benchmark/ASTT/legacy/train_val_UIT_ADrone_baseline_ca.py) | 作者 UIT-ADrone baseline＋CSA 歷史實驗入口。 |
 | [benchmark/ASTT/legacy/train_val_UIT_ADrone_ste_tte.py](../benchmark/ASTT/legacy/train_val_UIT_ADrone_ste_tte.py) | 作者 UIT-ADrone STE＋TTE 歷史實驗入口。 |
 | [benchmark/ASTT/legacy/utils.py](../benchmark/ASTT/legacy/utils.py) | 作者歷史指標、logging、裝置與設定工具。 |
-| [benchmark/ASTT/localization.py](../benchmark/ASTT/localization.py) | 舊匯入路徑相容入口；實作已移至 src/localization/candidates.py。 |
-| [benchmark/ASTT/model.py](../benchmark/ASTT/model.py) | 舊匯入路徑相容入口；實作已移至 src/detection/model.py。 |
+| [benchmark/ASTT/localization.py](../benchmark/ASTT/localization.py) | 舊匯入路徑相容入口；實作已移至 src/candidates.py。 |
+| [benchmark/ASTT/model.py](../benchmark/ASTT/model.py) | 舊匯入路徑相容入口；實作已移至 src/model.py。 |
 | [benchmark/ASTT/requirements.txt](../benchmark/ASTT/requirements.txt) | 正式 ASTT 的 torch、NumPy、OpenCV 依賴。 |
-| [benchmark/ASTT/runner.py](../benchmark/ASTT/runner.py) | 舊匯入路徑相容入口；實作已移至 src/runtime/runner.py。 |
+| [benchmark/ASTT/runner.py](../benchmark/ASTT/runner.py) | 舊匯入路徑相容入口；實作已移至 src/runner.py。 |
 | [benchmark/ASTT/scripts/extract_frames.py](../benchmark/ASTT/scripts/extract_frames.py) | 舊 scripts 抽幀指令相容入口。 |
 | [benchmark/ASTT/smoke_test.py](../benchmark/ASTT/smoke_test.py) | 根目錄自我檢查相容入口。 |
 | [benchmark/ASTT/src/__init__.py](../benchmark/ASTT/src/__init__.py) | 正式 ASTT 原始碼套件。 |
-| [benchmark/ASTT/src/config/__init__.py](../benchmark/ASTT/src/config/__init__.py) | 正式 CLI 設定套件。 |
-| [benchmark/ASTT/src/config/cli.py](../benchmark/ASTT/src/config/cli.py) | 正式 CLI、模型參數與 data/output 預設路徑。 |
-| [benchmark/ASTT/src/detection/__init__.py](../benchmark/ASTT/src/detection/__init__.py) | ASTT 模型演算法套件。 |
-| [benchmark/ASTT/src/detection/model.py](../benchmark/ASTT/src/detection/model.py) | 完整 STE／TTE／CSA 與下一幀預測模型。 |
-| [benchmark/ASTT/src/localization/__init__.py](../benchmark/ASTT/src/localization/__init__.py) | ASTT 影像候選區域套件。 |
-| [benchmark/ASTT/src/localization/candidates.py](../benchmark/ASTT/src/localization/candidates.py) | 誤差候選框與事件合併，非地理定位。 |
-| [benchmark/ASTT/src/runtime/__init__.py](../benchmark/ASTT/src/runtime/__init__.py) | ASTT 資料讀取與執行流程套件。 |
-| [benchmark/ASTT/src/runtime/annotations.py](../benchmark/ASTT/src/runtime/annotations.py) | 標記專案、來源群組切分與安全資料版本匯出。 |
-| [benchmark/ASTT/src/runtime/dataset.py](../benchmark/ASTT/src/runtime/dataset.py) | 連續影格窗口、標籤與缺幀檢查、可選 ECC 配準。 |
-| [benchmark/ASTT/src/runtime/runner.py](../benchmark/ASTT/src/runtime/runner.py) | 正式訓練、驗證、推論、checkpoint 與結果保存。 |
+| [benchmark/ASTT/src/config.py](../benchmark/ASTT/src/config.py) | 正式 CLI、模型參數與 data/output 預設路徑。 |
+| [benchmark/ASTT/src/model.py](../benchmark/ASTT/src/model.py) | 完整 STE／TTE／CSA 與下一幀預測模型。 |
+| [benchmark/ASTT/src/candidates.py](../benchmark/ASTT/src/candidates.py) | 誤差候選框與事件合併，非地理定位。 |
+| [benchmark/ASTT/src/__init__.py](../benchmark/ASTT/src/__init__.py) | ASTT 資料讀取與執行流程套件。 |
+| [benchmark/ASTT/src/annotations.py](../benchmark/ASTT/src/annotations.py) | 標記專案、來源群組切分與安全資料版本匯出。 |
+| [benchmark/ASTT/src/dataset.py](../benchmark/ASTT/src/dataset.py) | 連續影格窗口、標籤與缺幀檢查、可選 ECC 配準。 |
+| [benchmark/ASTT/src/runner.py](../benchmark/ASTT/src/runner.py) | 正式訓練、驗證、推論、checkpoint 與結果保存。 |
 | [benchmark/ASTT/src/ui/__init__.py](../benchmark/ASTT/src/ui/__init__.py) | ASTT 資料標記介面套件。 |
 | [benchmark/ASTT/src/ui/annotation_app.py](../benchmark/ASTT/src/ui/annotation_app.py) | 影片播放、異常區段標記與資料準備 GUI。 |
 | [benchmark/ASTT/test.py](../benchmark/ASTT/test.py) | 正式驗證／測試入口：載入本機 checkpoint，產生異常候選結果。 |
@@ -144,7 +143,7 @@ Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統，目
 | [src/boom/runtime/preview.py](../src/boom/runtime/preview.py) | 預覽縮放，保持偵測座標不變。 |
 | [src/boom/runtime/progress.py](../src/boom/runtime/progress.py) | 終端進度、耗時與結果統計。 |
 | [src/boom/runtime/reference.py](../src/boom/runtime/reference.py) | 參考照片 GPS/XMP 地理資訊解析。 |
-| [src/boom/runtime/runner.py](../src/boom/runtime/runner.py) | 離線影格處理、偵測、定位與輸出主迴圈。 |
+| [src/boom/runner.py](../src/boom/runner.py) | 離線影格處理、偵測、定位與輸出主迴圈。 |
 | [src/boom/ui/__init__.py](../src/boom/ui/__init__.py) | ui 套件初始化與公開匯出；不直接執行。 |
 | [src/boom/ui/composition.py](../src/boom/ui/composition.py) | 影片、側欄與地圖多面板合成。 |
 | [src/boom/ui/drawing.py](../src/boom/ui/drawing.py) | 文字與確認事件標記繪製。 |

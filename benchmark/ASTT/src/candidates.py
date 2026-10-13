@@ -1,9 +1,4 @@
-# 檔案功能：從預測誤差產生候選框，並按 IoU 合併與去抖事件。
-# 所屬分工：localization：影像內候選區域；與 Boom 地理定位的功能層級不同。
-# 輸入／輸出：H×W 誤差圖 → 模型解析度 bbox、候選事件 ID／幀範圍。
-# 執行方式：由 runner 呼叫 candidate_boxes()／EventMerger，不直接執行。
-# 設定與說明：threshold、min-area、event 參數見 config/cli.py；候選框不是煙霧分類或 GPS。
-
+# 檔案功能：高誤差候選框與跨影格事件合併；不提供煙霧分類或 GPS。
 """Project extension: spatial prediction error candidates, NOT smoke classes."""
 import cv2
 import numpy as np

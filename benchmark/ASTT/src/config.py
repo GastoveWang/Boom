@@ -1,14 +1,9 @@
-# 檔案功能：正式訓練／測試 CLI、預設路徑與模型設定欄位。
-# 所屬分工：config：相當於 Boom 的 config 設定層。
-# 輸入／輸出：命令列參數 → argparse Namespace；預設讀取 Boom/data、寫入 Boom/output。
-# 執行方式：由入口與 runner 呼叫 parser()，不直接執行。
-# 設定與說明：正式參數見 src/config/cli.py；說明見 doc/RUN_SETTINGS.md。
-
+# 檔案功能：訓練／測試 CLI、模型預設參數與預設資料／輸出路徑。
 import argparse
 from datetime import datetime
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 MODEL_KEYS = ('image_size', 'patch_size', 'emb_dim', 'mlp_dim', 'num_heads',
               'spatial_layers', 'temporal_layers', 'num_frames', 'dropout_rate')
 

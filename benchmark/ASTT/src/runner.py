@@ -1,9 +1,4 @@
-# 檔案功能：訓練、validation、測試推論、checkpoint 與結果保存。
-# 所屬分工：runtime：相當於 Boom 的執行流程層。
-# 輸入／輸出：連續影格與設定 → 模型權重、scores、heatmaps、候選事件與 metrics。
-# 執行方式：由 train.py／test.py 呼叫 train()／infer()，不直接執行。
-# 設定與說明：正式參數見 src/config/cli.py；說明見 doc/RUN_SETTINGS.md。
-
+# 檔案功能：訓練、驗證、測試、checkpoint 與分數／事件輸出。
 """Windows-friendly training / validation / held-out inference."""
 import csv
 import json
@@ -15,9 +10,9 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from .dataset import VideoDataset
-from ..detection.model import VisionTransformer
-from ..localization.candidates import EventMerger, candidate_boxes
-from ..config.cli import MODEL_KEYS, PROJECT_ROOT, parser
+from .model import VisionTransformer
+from .candidates import EventMerger, candidate_boxes
+from .config import MODEL_KEYS, PROJECT_ROOT, parser
 
 EVENT_FIELDS = ['video', 'event_id', 'start_frame', 'end_frame', 'confirmed_frame',
                 'hits', 'x1', 'y1', 'x2', 'y2', 'peak_score', 'status']

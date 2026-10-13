@@ -1,9 +1,4 @@
-# 檔案功能：影片／影格來源、異常區段、標記專案與 ASTT 資料集分組匯出。
-# 所屬分工：runtime：標記工具的資料邏輯，不依賴桌面 UI。
-# 輸入／輸出：30 FPS 時間軸的 inclusive 異常區段 → train／val（預設 7:3）、binary .npy 與來源紀錄。
-# 執行方式：由 tools/prepare_dataset.py 與 ui/annotation_app.py 呼叫。
-# 設定與說明：未標記影格依使用者指定視為正常；操作見 doc/DATASET_PREPARATION.md。
-
+# 檔案功能：人工區段標記、30 FPS 時間軸、來源分組與安全版本匯出。
 """Source-grouped dataset preparation; unmarked frames are explicitly normal."""
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -366,7 +361,7 @@ def export_dataset(sources, output_parent, name='artillery-shell', ratios=(7., 3
                                'split': plan['assignments'][s.id]} for s in sources]}
         (output / 'split_report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
         experiment = f'astt_{safe_name(output.name)}'
-        results_root = Path(__file__).resolve().parents[2] / 'output'
+        results_root = Path(__file__).resolve().parents[1] / 'output'
         (output / 'README.md').write_text(
             '<!-- 檔案功能：本次人工標記資料集的使用方式。 -->\n\n'
             '# ASTT 標記資料集\n\n依來源群組分 train／val，預設 7:3；未標記正常 0，標記異常 1。\n'

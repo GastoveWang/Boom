@@ -3,7 +3,7 @@
 # ASTT for Boom（本機整理版）
 
 正式入口是 `train.py`、`test.py`、`tools/extract_frames.py` 與 `tools/prepare_dataset.py`。
-正式程式依 Boom 分工放入 `src/`，上游 README、所有 ablation 和歷史訓練檔案集中保存於 `legacy/`；原始檔仍含作者的舊路徑與 CUDA 寫法，僅作研究參考，請勿使用它們啟動本機流程。新的正式流程沒有固定使用者名稱、特定影片或 checkpoint 路徑，也不依賴 timm / torchvision。
+正式程式以平坦模組放入 `src/`，桌面介面集中在 `src/ui/`。官方全部原檔逐位元保存於 `origin/`，禁止修改；`legacy/` 保留先前已加註解與匯入調整的歷史參考。兩者都不參與正式流程。新的正式流程沒有固定使用者名稱、特定影片或 checkpoint 路徑，也不依賴 timm / torchvision。
 
 上游：[Tungufm/ASTT](https://github.com/Tungufm/ASTT)，基準 commit `1d05305a94fb47b33897c7aa085c5351bcbbc8f9`。目前作為一般原始碼目錄納入 Boom Git，已移除內層 `.git`；上游 README 和歷史模型／實驗程式保留。快速入口與檔案分組見 [START_HERE.md](../START_HERE.md)，完整設定見 [RUN_SETTINGS.md](RUN_SETTINGS.md)。
 
@@ -11,7 +11,7 @@
 
 已閱讀 *Transformer-Based Spatio-Temporal Unsupervised Traffic Anomaly Detection in Aerial Videos*（IEEE TCSVT 2024，DOI [10.1109/TCSVT.2024.3376399](https://doi.org/10.1109/TCSVT.2024.3376399)）的 Section III、Fig. 2–3、Eq. 6–13，以及 Section IV-C；本機來源為 Downloads 中使用者指定名稱的 PDF。
 
-`src/detection/model.py` 是以 `legacy/model_ste_tte.py` 的分解流程與 decoder 為基礎整理的 STE + TTE + CSA：
+`src/model.py` 是以 `legacy/model_ste_tte.py` 的分解流程與 decoder 為基礎整理的 STE + TTE + CSA：
 
 1. 四幀依時間先後送入**共享** spatial transformer，取每幀 spatial CLS。
 2. 加 temporal CLS 與 temporal position embedding，送入 temporal transformer，保留全部 5 tokens。
@@ -53,7 +53,7 @@ python smoke_test.py
 
 可另建 Python 3.10–3.13 環境。GPU 請先依 PyTorch 官方安裝方式選擇符合硬體的 torch build；`requirements.txt` 不固定 CUDA wheel。保留的上游 ablation 若要另行研究，還需 matching torchvision 與 timm，且那些腳本尚未整理成正式本機入口。
 
-`src/config/cli.py` 使用 `Path(__file__).resolve().parents[4]` 推導 Boom；抽幀工具位於 tools，使用 `parents[3]`。根目錄入口會載入本機 `src`，不需要額外安裝套件。因此程式碼沒有硬編碼 `roger`，移動整個 Boom 目錄仍可使用。
+`src/config.py` 使用 `Path(__file__).resolve().parents[4]` 推導 Boom；抽幀工具位於 tools，使用 `parents[3]`。根目錄入口會載入本機 `src`，不需要額外安裝套件。因此程式碼沒有硬編碼 `roger`，移動整個 Boom 目錄仍可使用。
 
 ## 資料格式
 

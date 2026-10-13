@@ -1,6 +1,6 @@
 # 執行入口與完整設定
 
-從 Boom 根目錄執行。以下 CLI 表由目前 argparse 定義（ASTT 位於 benchmark/ASTT/src/config/cli.py）產生；絕對路徑以 `<Boom>` 表示專案根。ASTT 的資料／輸出根會再附加 astt/；修改 configs/*.yaml 不會改 ASTT 設定。
+從 Boom 根目錄執行。以下 CLI 表由目前 argparse 定義（ASTT 位於 benchmark/ASTT/src/config.py）產生；絕對路徑以 `<Boom>` 表示專案根。ASTT 的資料／輸出根會再附加 astt/；修改 configs/*.yaml 不會改 ASTT 設定。
 
 ## 常用入口
 
