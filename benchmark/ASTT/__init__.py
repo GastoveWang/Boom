@@ -1,2 +1,5 @@
-# 檔案功能：ASTT 套件初始化與公開匯出；不直接執行。
-# 執行設定：doc/RUN_SETTINGS.md；ASTT 正式參數見 runner.py parser()，歷史 config.py 不影響正式流程。
+# 檔案功能：ASTT 外層套件標記。
+# 所屬分工：不在此處自動載入模型或歷史依賴。
+# 輸入／輸出：套件匯入；不產生實驗輸出。
+# 執行方式：不直接執行。
+# 設定與說明：正式參數見 src/config/cli.py；說明見 doc/RUN_SETTINGS.md。

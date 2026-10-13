@@ -10,34 +10,61 @@ Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統，目
 |---|---|
 | [.gitignore](../.gitignore) | 版本控制／目錄保留設定。 |
 | [AGENTS.md](../AGENTS.md) | 專案目標、功能優先順序與修改／驗證原則。 |
-| [benchmark/ASTT/.gitignore](../benchmark/ASTT/.gitignore) | 版本控制／目錄保留設定。 |
-| [benchmark/ASTT/__init__.py](../benchmark/ASTT/__init__.py) | ASTT 套件初始化與公開匯出；不直接執行。 |
-| [benchmark/ASTT/check_jax.py](../benchmark/ASTT/check_jax.py) | 歷史 JAX 權重檢查入口。 |
-| [benchmark/ASTT/checkpoint.py](../benchmark/ASTT/checkpoint.py) | 歷史 JAX/ViT 權重載入與轉換。 |
-| [benchmark/ASTT/config.py](../benchmark/ASTT/config.py) | 歷史 ViT argparse 設定；正式入口不使用。 |
-| [benchmark/ASTT/data_loaders.py](../benchmark/ASTT/data_loaders.py) | 歷史 CIFAR/ImageNet loader；正式入口不使用。 |
-| [benchmark/ASTT/data_utils.py](../benchmark/ASTT/data_utils.py) | 歷史影格 loader；正式入口改用 dataset.py。 |
-| [benchmark/ASTT/dataset.py](../benchmark/ASTT/dataset.py) | 每影片連續影格窗口、缺幀／標籤校驗與可選 ECC。 |
-| [benchmark/ASTT/eval.py](../benchmark/ASTT/eval.py) | 歷史影像分類評估入口，非本機異常測試。 |
-| [benchmark/ASTT/localization.py](../benchmark/ASTT/localization.py) | 誤差候選 bbox 與事件去抖合併，非 GPS 定位。 |
-| [benchmark/ASTT/model.py](../benchmark/ASTT/model.py) | 本機 STE/TTE/CSA 模型與下一幀預測 decoder。 |
-| [benchmark/ASTT/model_baseline_ca.py](../benchmark/ASTT/model_baseline_ca.py) | 歷史 baseline + cross attention 模型，研究參考。 |
-| [benchmark/ASTT/model_original.py](../benchmark/ASTT/model_original.py) | 歷史原始模型，研究參考。 |
-| [benchmark/ASTT/model_ste_tte.py](../benchmark/ASTT/model_ste_tte.py) | 歷史 STE/TTE 模型，研究參考。 |
-| [benchmark/ASTT/README.md](../benchmark/ASTT/README.md) | ASTT 上游論文、作者與引用資訊。 |
-| [benchmark/ASTT/README_LOCAL.md](../benchmark/ASTT/README_LOCAL.md) | ASTT 本機適配、模型解讀、資料格式、設定與限制。 |
-| [benchmark/ASTT/requirements.txt](../benchmark/ASTT/requirements.txt) | 正式 ASTT 流程的 torch、NumPy、OpenCV 依賴。 |
-| [benchmark/ASTT/runner.py](../benchmark/ASTT/runner.py) | 訓練、驗證、推論、CLI、checkpoint 與輸出核心。 |
-| [benchmark/ASTT/scripts/extract_frames.py](../benchmark/ASTT/scripts/extract_frames.py) | 正式 MP4 抽幀入口，保存影格與來源幀號／時間 manifest。 |
-| [benchmark/ASTT/smoke_test.py](../benchmark/ASTT/smoke_test.py) | 暫存資料上的模型、資料、事件与指標自我檢查。 |
-| [benchmark/ASTT/START_HERE.md](../benchmark/ASTT/START_HERE.md) | ASTT 正式／歷史檔案分组與訓練、測試快速操作。 |
-| [benchmark/ASTT/test.py](../benchmark/ASTT/test.py) | 正式驗證／測試入口，必須提供本機 checkpoint。 |
-| [benchmark/ASTT/train.py](../benchmark/ASTT/train.py) | 正式訓練入口，設定由 runner.parser 定義。 |
-| [benchmark/ASTT/Train_and_eval.py](../benchmark/ASTT/Train_and_eval.py) | 歷史資料巡覽與訓練評估腳本，含上游路徑。 |
-| [benchmark/ASTT/train_val_UIT_ADrone.py](../benchmark/ASTT/train_val_UIT_ADrone.py) | 歷史 UIT_ADrone 資料集／模型實驗；含上游路徑，非正式入口。 |
-| [benchmark/ASTT/train_val_UIT_ADrone_baseline_ca.py](../benchmark/ASTT/train_val_UIT_ADrone_baseline_ca.py) | 歷史 UIT_ADrone_baseline_ca 資料集／模型實驗；含上游路徑，非正式入口。 |
-| [benchmark/ASTT/train_val_UIT_ADrone_ste_tte.py](../benchmark/ASTT/train_val_UIT_ADrone_ste_tte.py) | 歷史 UIT_ADrone_ste_tte 資料集／模型實驗；含上游路徑，非正式入口。 |
-| [benchmark/ASTT/utils.py](../benchmark/ASTT/utils.py) | 歷史 metrics、logging 與設定工具。 |
+| [benchmark/ASTT/.gitignore](../benchmark/ASTT/.gitignore) | ASTT 快取、本地環境、標記紀錄與產生資料集的忽略規則。 |
+| [benchmark/ASTT/README.md](../benchmark/ASTT/README.md) | ASTT 本機專案總覽與文件入口。 |
+| [benchmark/ASTT/README_LOCAL.md](../benchmark/ASTT/README_LOCAL.md) | 舊本機說明連結，導向 doc/README_LOCAL.md。 |
+| [benchmark/ASTT/START_HERE.md](../benchmark/ASTT/START_HERE.md) | 整理後的正式入口、閱讀順序與訓練／測試快速操作。 |
+| [benchmark/ASTT/__init__.py](../benchmark/ASTT/__init__.py) | ASTT 外層套件標記。 |
+| [benchmark/ASTT/dataset.py](../benchmark/ASTT/dataset.py) | 舊匯入路徑相容入口；實作已移至 src/runtime/dataset.py。 |
+| [benchmark/ASTT/doc/FILE_INDEX.md](../benchmark/ASTT/doc/FILE_INDEX.md) | ASTT 每個檔案的用途與點擊入口。 |
+| [benchmark/ASTT/doc/DATASET_PREPARATION.md](../benchmark/ASTT/doc/DATASET_PREPARATION.md) | ASTT 異常區段標記、train／val 7:3 分組與 .npy 操作。 |
+| [benchmark/ASTT/doc/PROJECT_STRUCTURE.md](../benchmark/ASTT/doc/PROJECT_STRUCTURE.md) | ASTT 目錄結構、流程及 Boom 功能對照。 |
+| [benchmark/ASTT/doc/README_LOCAL.md](../benchmark/ASTT/doc/README_LOCAL.md) | 模型解讀、資料格式、訓練／推論協定與限制。 |
+| [benchmark/ASTT/doc/RUN_SETTINGS.md](../benchmark/ASTT/doc/RUN_SETTINGS.md) | ASTT 正式設定位置、模型預設值與執行指令。 |
+| [benchmark/ASTT/legacy/README.md](../benchmark/ASTT/legacy/README.md) | 上游歷史檔案分類、用途與執行限制。 |
+| [benchmark/ASTT/legacy/README_UPSTREAM.md](../benchmark/ASTT/legacy/README_UPSTREAM.md) | 保留作者的上游 README、論文背景與引用資訊。 |
+| [benchmark/ASTT/legacy/Train_and_eval.py](../benchmark/ASTT/legacy/Train_and_eval.py) | 作者歷史資料巡覽與訓練評估腳本。 |
+| [benchmark/ASTT/legacy/__init__.py](../benchmark/ASTT/legacy/__init__.py) | 上游歷史研究檔案的目錄標記。 |
+| [benchmark/ASTT/legacy/check_jax.py](../benchmark/ASTT/legacy/check_jax.py) | 作者歷史 JAX 權重檢查腳本。 |
+| [benchmark/ASTT/legacy/checkpoint.py](../benchmark/ASTT/legacy/checkpoint.py) | 作者歷史 JAX／ViT 權重載入與轉換工具。 |
+| [benchmark/ASTT/legacy/config.py](../benchmark/ASTT/legacy/config.py) | 作者歷史 ViT 參數，不控制正式 train.py／test.py。 |
+| [benchmark/ASTT/legacy/data_loaders.py](../benchmark/ASTT/legacy/data_loaders.py) | 作者歷史 CIFAR／ImageNet loader，正式流程不使用。 |
+| [benchmark/ASTT/legacy/data_utils.py](../benchmark/ASTT/legacy/data_utils.py) | 作者歷史連續影格讀取工具，正式流程使用 runtime/dataset.py。 |
+| [benchmark/ASTT/legacy/eval.py](../benchmark/ASTT/legacy/eval.py) | 作者歷史影像分類評估入口，非本機異常測試。 |
+| [benchmark/ASTT/legacy/model_baseline_ca.py](../benchmark/ASTT/legacy/model_baseline_ca.py) | 作者 baseline 加 cross-attention 模型，供消融研究。 |
+| [benchmark/ASTT/legacy/model_original.py](../benchmark/ASTT/legacy/model_original.py) | 作者原始時空 Transformer 模型，供架構比較。 |
+| [benchmark/ASTT/legacy/model_ste_tte.py](../benchmark/ASTT/legacy/model_ste_tte.py) | 作者 STE＋TTE 模型，供正式模型的來源與架構比較。 |
+| [benchmark/ASTT/legacy/train_val_UIT_ADrone.py](../benchmark/ASTT/legacy/train_val_UIT_ADrone.py) | 作者 UIT-ADrone 主模型歷史實驗入口。 |
+| [benchmark/ASTT/legacy/train_val_UIT_ADrone_baseline_ca.py](../benchmark/ASTT/legacy/train_val_UIT_ADrone_baseline_ca.py) | 作者 UIT-ADrone baseline＋CSA 歷史實驗入口。 |
+| [benchmark/ASTT/legacy/train_val_UIT_ADrone_ste_tte.py](../benchmark/ASTT/legacy/train_val_UIT_ADrone_ste_tte.py) | 作者 UIT-ADrone STE＋TTE 歷史實驗入口。 |
+| [benchmark/ASTT/legacy/utils.py](../benchmark/ASTT/legacy/utils.py) | 作者歷史指標、logging、裝置與設定工具。 |
+| [benchmark/ASTT/localization.py](../benchmark/ASTT/localization.py) | 舊匯入路徑相容入口；實作已移至 src/localization/candidates.py。 |
+| [benchmark/ASTT/model.py](../benchmark/ASTT/model.py) | 舊匯入路徑相容入口；實作已移至 src/detection/model.py。 |
+| [benchmark/ASTT/requirements.txt](../benchmark/ASTT/requirements.txt) | 正式 ASTT 的 torch、NumPy、OpenCV 依賴。 |
+| [benchmark/ASTT/runner.py](../benchmark/ASTT/runner.py) | 舊匯入路徑相容入口；實作已移至 src/runtime/runner.py。 |
+| [benchmark/ASTT/scripts/extract_frames.py](../benchmark/ASTT/scripts/extract_frames.py) | 舊 scripts 抽幀指令相容入口。 |
+| [benchmark/ASTT/smoke_test.py](../benchmark/ASTT/smoke_test.py) | 根目錄自我檢查相容入口。 |
+| [benchmark/ASTT/src/__init__.py](../benchmark/ASTT/src/__init__.py) | 正式 ASTT 原始碼套件。 |
+| [benchmark/ASTT/src/config/__init__.py](../benchmark/ASTT/src/config/__init__.py) | 正式 CLI 設定套件。 |
+| [benchmark/ASTT/src/config/cli.py](../benchmark/ASTT/src/config/cli.py) | 正式 CLI、模型參數與 data/output 預設路徑。 |
+| [benchmark/ASTT/src/detection/__init__.py](../benchmark/ASTT/src/detection/__init__.py) | ASTT 模型演算法套件。 |
+| [benchmark/ASTT/src/detection/model.py](../benchmark/ASTT/src/detection/model.py) | 完整 STE／TTE／CSA 與下一幀預測模型。 |
+| [benchmark/ASTT/src/localization/__init__.py](../benchmark/ASTT/src/localization/__init__.py) | ASTT 影像候選區域套件。 |
+| [benchmark/ASTT/src/localization/candidates.py](../benchmark/ASTT/src/localization/candidates.py) | 誤差候選框與事件合併，非地理定位。 |
+| [benchmark/ASTT/src/runtime/__init__.py](../benchmark/ASTT/src/runtime/__init__.py) | ASTT 資料讀取與執行流程套件。 |
+| [benchmark/ASTT/src/runtime/annotations.py](../benchmark/ASTT/src/runtime/annotations.py) | 標記專案、來源群組切分與安全資料版本匯出。 |
+| [benchmark/ASTT/src/runtime/dataset.py](../benchmark/ASTT/src/runtime/dataset.py) | 連續影格窗口、標籤與缺幀檢查、可選 ECC 配準。 |
+| [benchmark/ASTT/src/runtime/runner.py](../benchmark/ASTT/src/runtime/runner.py) | 正式訓練、驗證、推論、checkpoint 與結果保存。 |
+| [benchmark/ASTT/src/ui/__init__.py](../benchmark/ASTT/src/ui/__init__.py) | ASTT 資料標記介面套件。 |
+| [benchmark/ASTT/src/ui/annotation_app.py](../benchmark/ASTT/src/ui/annotation_app.py) | 影片播放、異常區段標記與資料準備 GUI。 |
+| [benchmark/ASTT/test.py](../benchmark/ASTT/test.py) | 正式驗證／測試入口：載入本機 checkpoint，產生異常候選結果。 |
+| [benchmark/ASTT/tests/__init__.py](../benchmark/ASTT/tests/__init__.py) | ASTT 自我檢查套件標記，區別根目錄相容入口。 |
+| [benchmark/ASTT/tests/smoke_test.py](../benchmark/ASTT/tests/smoke_test.py) | 暫存資料上的模型、事件、CLI、續訓與抽幀整體自我檢查。 |
+| [benchmark/ASTT/tests/test_annotations.py](../benchmark/ASTT/tests/test_annotations.py) | 區段標記、標籤對齊、分組、安全匯出與 GUI 測試。 |
+| [benchmark/ASTT/tools/__init__.py](../benchmark/ASTT/tools/__init__.py) | ASTT 資料準備工具套件。 |
+| [benchmark/ASTT/tools/extract_frames.py](../benchmark/ASTT/tools/extract_frames.py) | 正式 MP4 抽幀工具及來源幀號／時間 manifest。 |
+| [benchmark/ASTT/tools/prepare_dataset.py](../benchmark/ASTT/tools/prepare_dataset.py) | ASTT 標記 GUI、分組預覽與 .npy 匯出入口。 |
+| [benchmark/ASTT/train.py](../benchmark/ASTT/train.py) | 正式訓練入口：正常片段訓練、獨立 validation 與保存最佳權重。 |
 | [configs/default.yaml](../configs/default.yaml) | 執行設定；用途與合併順序見 configs/README.md。 |
 | [configs/detector-motion.yaml](../configs/detector-motion.yaml) | 執行設定；用途與合併順序見 configs/README.md。 |
 | [configs/detector-yolo.yaml](../configs/detector-yolo.yaml) | 執行設定；用途與合併順序見 configs/README.md。 |
@@ -56,7 +83,7 @@ Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統，目
 | [doc/PROJECT_STRUCTURE.md](../doc/PROJECT_STRUCTURE.md) | 專案架構、偵測流程與離線／即時執行範例。 |
 | [doc/README.md](../doc/README.md) | 文件入口與比較專案的 Git 追蹤規則。 |
 | [doc/RUN_SETTINGS.md](../doc/RUN_SETTINGS.md) | 執行入口、目前 YAML 值與 CLI 完整參數表。 |
-| [doc/TOOLS.md](../doc/TOOLS.md) | 抽幀、YOLO 資料切分、訓練與 ONNX 匯出指令。 |
+| [doc/TOOLS.md](../doc/TOOLS.md) | 抽幀、ASTT 標記、YOLO 資料切分、訓練與 ONNX 匯出指令。 |
 | [pyproject.toml](../pyproject.toml) | Boom 套件、Python 版本、基礎／ML／ONNX／地圖依賴與安裝設定。 |
 | [run_offline.py](../run_offline.py) | 離線影片入口：選擇 motion 或 YOLO，執行偵測、顯示、保存與可選定位。 |
 | [run_realtime.py](../run_realtime.py) | Spinnaker 即時相機入口：取像、偵測、畫面顯示與事件保存。 |

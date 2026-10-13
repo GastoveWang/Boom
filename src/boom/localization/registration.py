@@ -17,10 +17,25 @@ Boom 航拍定位 - 照片/地圖配準與漂移校正 (registration.py)
 """
 from __future__ import annotations
 
+import time
 import cv2
 import numpy as np
 
 from .geometry import plane_homography, transform
+from .match_output import geometric_quality, match_directory, write_match
+
+
+def _report(localizer, stage, started, image, reference, a, b, h, selected,
+            accepted, reason, quality=None):
+    metrics = geometric_quality(a, b, h, selected, image.shape) if quality is None else dict(quality)
+    metrics.update(accepted=bool(accepted), reason=reason,
+                   elapsed_ms=(time.monotonic() - started) * 1000,
+                   matcher_backend=localizer.nearby.config.matcher_backend)
+    directory = match_directory(localizer.output, stage)
+    data = write_match(directory, stage, image, reference, a, b, selected, metrics,
+                       frame=getattr(localizer, "current_frame_idx", None),
+                       time_sec=getattr(localizer, "current_time_sec", None))
+    localizer.record(data)
 
 
 def matches(localizer, a, b, mask_a=None, mask_b=None):
@@ -55,6 +70,7 @@ def match_features(matcher, features_a, features_b, ratio_threshold=.70):
 
 
 def register_reference(localizer):
+    started = time.monotonic()
     # Rectify the oblique photo with the metadata prior before feature matching.
     view = localizer.map.matching_view(localizer.nearby, localizer.photo.lon, localizer.photo.lat)
     if view is None:
@@ -82,6 +98,10 @@ def register_reference(localizer):
         accepted = localizer.fit_pose(world, photo_pts, localizer.ref_k, max_shift=100.)
         if accepted:
             localizer.ref_h = plane_homography(localizer.ref_k, localizer.rotation, localizer.center)
+    _report(localizer, "map_match_rectified", started, warped, view.gray, a, b,
+            correction, select, accepted,
+            "accepted" if accepted else ("pose_rejected" if match_quality["accepted"] else match_quality["reason"]),
+            quality=match_quality)
     localizer.reference_valid = accepted
     localizer.status = "REFERENCE_MATCHED" if accepted else "REFERENCE_MATCH_FAILED"
     if localizer.nearby.config.debug:
@@ -99,17 +119,26 @@ def register_reference(localizer):
 
 
 def reference_link(localizer, gray, k):
+    started = time.monotonic()
     a, b = localizer.matches(localizer.ref_gray, gray)
+    h = None
+    selected = np.zeros(len(a), bool)
+    def finish(accepted, reason):
+        _report(localizer, "photo_video_match", started, localizer.ref_gray, gray,
+                a, b, h, selected, accepted, reason)
+        return accepted
     if len(a) < 16:
-        return False
+        return finish(False, "insufficient_matches")
     h, good = cv2.findHomography(a, b, cv2.RANSAC, 3.)
+    if good is not None:
+        selected = good.ravel() != 0
     if h is None or good is None or good.sum() < 16:
-        return False
-    a, b = a[good.ravel() != 0], b[good.ravel() != 0]
-    world = transform(a, np.linalg.inv(localizer.ref_h))
+        return finish(False, "insufficient_inliers")
+    world = transform(a[selected], np.linalg.inv(localizer.ref_h))
     valid = np.array([localizer.map.contains(p) for p in world])
     if localizer.video_focal_scale is not None:
-        return localizer.fit_pose(world[valid], b[valid], k, max_shift=150., previous=localizer.ref_center)
+        accepted = localizer.fit_pose(world[valid], b[selected][valid], k, max_shift=150., previous=localizer.ref_center)
+        return finish(accepted, "accepted" if accepted else "pose_rejected")
     # A video may additionally crop horizontally. Fit a bounded focal-length
     # search against the photo-ground correspondences, then keep it fixed.
     best = None
@@ -117,22 +146,23 @@ def reference_link(localizer, gray, k):
         candidate = k.copy()
         candidate[0, 0] *= factor
         candidate[1, 1] *= factor
-        if localizer.fit_pose(world[valid], b[valid], candidate, max_shift=150., previous=localizer.ref_center):
+        if localizer.fit_pose(world[valid], b[selected][valid], candidate, max_shift=150., previous=localizer.ref_center):
             score = localizer.quality["inliers"]
             if best is None or score > best[0]:
                 best = (score, factor, localizer.center.copy(), localizer.rotation.copy(), localizer.quality.copy())
     if best is None:
         localizer.center, localizer.rotation = localizer.ref_center.copy(), localizer.ref_rotation.copy()
-        return False
+        return finish(False, "pose_rejected")
     _, localizer.video_focal_scale, localizer.center, localizer.rotation, localizer.quality = best
     k[0, 0] *= localizer.video_focal_scale
     k[1, 1] *= localizer.video_focal_scale
     localizer.record({"stage": "photo_video_link", "focal_scale": localizer.video_focal_scale,
                  "quality": localizer.quality, "map_alignment": "visual" if localizer.reference_valid else "gps_metadata_only"})
-    return True
+    return finish(True, "accepted")
 
 
 def map_correction(localizer, gray, k):
+    started = time.monotonic()
     lon, lat = localizer.map.to_gps(localizer.center)
     view = localizer.map.matching_view(localizer.nearby, lon, lat)
     if view is None:
@@ -145,11 +175,19 @@ def map_correction(localizer, gray, k):
     mask = cv2.warpPerspective(valid_image, to_map, size)
     mask = cv2.bitwise_and(cv2.erode(mask, np.ones((11, 11), np.uint8)), view.coverage)
     a, b = localizer.matches(warped, view.gray, mask, view.coverage)
+    correction = None
+    select = np.zeros(len(a), bool)
+    def finish(accepted, reason):
+        _report(localizer, "map_correction", started, warped, view.gray, a, b,
+                correction, select, accepted, reason)
+        return accepted
     if len(a) < 16:
-        return False
+        return finish(False, "insufficient_matches")
     correction, good = cv2.findHomography(a, b, cv2.RANSAC, 3.)
+    if good is not None:
+        select = good.ravel() != 0
     if correction is None or good is None or good.sum() < 16 or good.mean() < .25:
-        return False
-    select = good.ravel() != 0
-    return localizer.fit_pose(transform(b[select], view.world_from_pixel),
+        return finish(False, "insufficient_inliers")
+    accepted = localizer.fit_pose(transform(b[select], view.world_from_pixel),
                          transform(a[select], np.linalg.inv(to_map)), k, max_shift=15.)
+    return finish(accepted, "accepted" if accepted else "pose_rejected")

@@ -1,3 +1,5 @@
+# 檔案功能：正式 ASTT 依賴；從 Boom 根目錄以 pip -r 安裝。
+# 所屬分工：環境設定；CUDA torch build 依硬體選擇，legacy 的額外套件不必為正式實驗安裝。
 # Official local pipeline (Python 3.10-3.13); install a matching CUDA torch build separately if needed.
 torch>=2.6,<3
 numpy>=1.24,<3

@@ -74,3 +74,5 @@ def report_result(processed, history, detector, image_path, video_path, geo, loc
     print(f"[INFO] Detector: {detector_name}")
     print(f"[INFO] Output video: {output_video_path}")
     print(f"[INFO] Coordinate log: {log_path}")
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        print(f"[DETECTION] {line}", flush=True)

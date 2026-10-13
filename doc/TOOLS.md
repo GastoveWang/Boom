@@ -1,6 +1,17 @@
-# Boom 資料準備與 YOLO 訓練工具鏈 (tools/)
+# Boom 資料準備與模型訓練工具
 
-`tools/` 包含 Boom 專案的資料準備、資料集切分與 YOLO 訓練工具。
+`tools/` 包含 Boom 專案的資料準備、資料集切分與 YOLO 訓練工具。ASTT 的影片標記工具位於 `benchmark/ASTT/tools/`。
+
+## ASTT：標記異常時間區段、自動分組與 .npy
+
+```powershell
+conda activate boom
+python benchmark/ASTT/tools/prepare_dataset.py
+```
+
+加入影片或連續影格 → S 起點、E 終點標記異常 → 每支按完成 → 預覽分組 → 產生資料集。標記畫面與匯出固定 30 FPS，高幀率取樣、低幀率重複影格；圖片資料夾須已是 30 FPS 序列。未標記影格依此工具規則視為正常，至少兩個獨立來源群組，依 7:3 分 train／val。預設建立 `benchmark/ASTT/data/prepared/artillery-shell_v1/`，不覆寫原始資料或先前版本；訓練只使用五幀皆正常的窗口。訓練結束會輸出 val 效果，另行查看使用 `test.py --split val`。
+
+完整操作及訓練／測試指令見 [ASTT 資料準備](../benchmark/ASTT/doc/DATASET_PREPARATION.md)。
 
 相機上機前檢查：`python tools/check_camera.py` 列出 SDK 版本與相機；
 關閉 SpinView 後執行 `python tools/check_camera.py --frames 30` 可測試實際取像。

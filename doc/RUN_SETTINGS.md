@@ -1,6 +1,6 @@
 # 執行入口與完整設定
 
-從 Boom 根目錄執行。以下 CLI 表由目前 argparse 定義產生；絕對路徑以 `<Boom>` 表示專案根。ASTT 的資料／輸出根會再附加 astt/；修改 configs/*.yaml 不會改 ASTT 設定。
+從 Boom 根目錄執行。以下 CLI 表由目前 argparse 定義（ASTT 位於 benchmark/ASTT/src/config/cli.py）產生；絕對路徑以 `<Boom>` 表示專案根。ASTT 的資料／輸出根會再附加 astt/；修改 configs/*.yaml 不會改 ASTT 設定。
 
 ## 常用入口
 
@@ -15,7 +15,8 @@ python tools/video_to_frames.py data/video/example.mp4 --interval 0.5
 python tools/split_dataset.py
 python tools/train_yolo.py
 python benchmark/ASTT/train.py --experiment-name astt_first --epochs 30 --batch-size 1
-python benchmark/ASTT/test.py --checkpoint output/astt/astt_first/checkpoints/best.pth --experiment-name astt_test --batch-size 1
+python benchmark/ASTT/tools/prepare_dataset.py
+python benchmark/ASTT/test.py --split val --checkpoint output/astt/astt_first/checkpoints/best.pth --experiment-name astt_val --batch-size 1
 ```
 
 影片／模型路徑為示例，須替換成現有檔案。ASTT 訓練前準備正常 train 與獨立 val；測試需本機版權重。即時相機需原廠 PySpin SDK。YOLO 訓練的模型、資料集與超參數由互動提示選擇，細節見 [TOOLS.md](TOOLS.md)。
@@ -212,7 +213,7 @@ ui:
 | `--map-max-reprojection-error-px` | `2.5` | map max reprojection error px |
 | `--map-min-coverage` | `0.02` | map min coverage |
 | `--map-cache-entries` | `9` | map cache entries |
-| `--map-debug` | `False` | Save each map-match call's ROI/matches/inliers/footprint diagnostics. |
+| `--map-debug` | `False` | 額外保存 UAV／ROI／inliers／footprint 診斷；匹配圖與數據預設保存。 |
 | `--ground-height` | `None` | Camera height above local ground in metres; default: photo RelativeAltitude approximation. |
 | `--allow-gps-seed` | `False` | Allow explicitly provisional GPS-photo VO if photo/map visual matching fails. |
 | `--drone-icon` | `<Boom>\asset\pictures\drone.png` | drone icon |
@@ -394,4 +395,4 @@ model.train(data=str(DATA_YAML), epochs=100, imgsz=IMAGE_SIZE, batch=-1, device=
 | --split | train | train、val 或 test。 |
 | --data-dir | <Boom>/data | 根目錄，會附加 astt/<split>。 |
 
-模型設定由 checkpoint 載入時，以權重內 model_config 為準；registration 必須與訓練一致。resume 要保持原總 epochs、每 epoch steps 和選模方式。threshold/min-area 等只影響候選區域，不是煙霧分類信心。更多格式和限制見 [ASTT 本機說明](../benchmark/ASTT/README_LOCAL.md)。
+模型設定由 checkpoint 載入時，以權重內 model_config 為準；registration 必須與訓練一致。resume 要保持原總 epochs、每 epoch steps 和選模方式。threshold/min-area 等只影響候選區域，不是煙霧分類信心。更多格式和限制見 [ASTT 本機說明](../benchmark/ASTT/doc/README_LOCAL.md)。

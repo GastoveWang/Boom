@@ -1,56 +1,65 @@
+<!-- 檔案功能：整理後的正式入口、閱讀順序與訓練／測試快速操作。 -->
+
 # ASTT 從這裡開始
 
-ASTT 是連續影格預測的異常偵測方法。本機版可訓練、驗證、測試並產生高預測誤差的候選區域；尚未接入 Boom 即時 runner，也不能把候選區域當成已確認煙霧或 GPS 煙源。
+先看 [doc/PROJECT_STRUCTURE.md](doc/PROJECT_STRUCTURE.md) 的 Boom 對照表，了解各層做什麼；再看 [doc/RUN_SETTINGS.md](doc/RUN_SETTINGS.md) 調整參數。完整資料格式與模型解讀在 [doc/README_LOCAL.md](doc/README_LOCAL.md)。
 
-## 檔案分組
+## 你會直接執行的檔案
 
-| 用途 | 檔案 | 你是否需要直接執行 |
-|---|---|---|
-| 正式訓練 | train.py | 是 |
-| 正式測試／推論 | test.py | 是，必須指定本機版 checkpoint |
-| 影片抽幀 | scripts/extract_frames.py | 只有資料還是影片時 |
-| 自我檢查 | smoke_test.py | 安裝後可執行，不是正式訓練 |
-| 正式流程核心 | runner.py | 否，train/test 呼叫它；CLI 設定定義在 parser() |
-| 連續影格資料集 | dataset.py | 否；按影片建窗口、檢查缺幀與標籤、可選 ECC |
-| 正式模型 | model.py | 否；STE、TTE、CSA 與下一幀 decoder |
-| 候選區域與事件 | localization.py | 否；誤差區域、bbox、IoU 合併與去抖，非地理定位 |
-| 環境 | requirements.txt | pip 安裝使用 |
-| 詳細適配說明 | README_LOCAL.md | 資料格式、模型解讀、恢復訓練與限制 |
-| 上游說明 | README.md | 論文、作者、原專案背景 |
-| 歷史模型 | model_original.py、model_baseline_ca.py、model_ste_tte.py | 研究參考，不是正式入口 |
-| 歷史實驗入口 | Train_and_eval.py、train_val_*.py、eval.py | 研究參考，仍有作者路徑及額外依賴 |
-| 歷史共用模組 | config.py、utils.py、data_utils.py、data_loaders.py | 正式流程不使用；不要在 config.py 改本機訓練設定 |
-| 歷史權重工具 | checkpoint.py、check_jax.py | JAX/ViT 權重轉換與檢查；正式流程不使用 |
-| 套件標記 | __init__.py | 否 |
+| 工作 | 入口 |
+|---|---|
+| 影片時間區段標記、自動分組與 .npy | tools/prepare_dataset.py |
+| 正常片段訓練 | train.py |
+| 載入權重測試／輸出異常候選 | test.py |
+| 用權重直接跑新影片、輸出標記 MP4 | inference.py |
+| 從影片抽幀 | tools/extract_frames.py |
+| 程式自我檢查 | tests/smoke_test.py；原 smoke_test.py 也可用 |
 
-保留歷史檔案的位置，避免破壞它們原來的 import。檔案頂端新增功能／入口註記；正式設定完整列在 [執行設定索引](../../doc/RUN_SETTINGS.md)。
+其餘 `src/` 由入口呼叫。`legacy/` 是作者的歷史參考，正式實驗不需要執行。
 
-## 用現有 data/picture 訓練
+用權重跑一支新影片，不需標記或建立資料集：
 
-1. 先人工找出無煙霧的連續片段，複製 JPG/PNG 到 `data/astt/train/<片段名稱>/`。
-2. 不同來源影片留作 val/test，分別放入 `data/astt/val/frames/<影片名稱>/` 和 `data/astt/test/frames/<影片名稱>/`。不要把同影片相鄰幀隨機切分。
-3. 每個資料夾至少 5 幀，支援 `frame_000001.jpg`。不要跨剪接拼接；缺少 JSON 不代表正常。
-4. LabelMe JSON 不直接輸入 ASTT。評估 AUC 需每影片一個長度與排序影格一致的 binary `.npy`（0 正常、1 異常），保存到各 split 的 `test_frame_masks/<影片名稱>.npy`。無標籤仍可算 MSE 和輸出候選區域。
+```bat
+python benchmark/ASTT/inference.py --video "C:\videos\new_video.mp4" --checkpoint benchmark/ASTT/output/astt/astt_artillery_shell_v1_001/checkpoints/best.pth --device cuda
+```
 
-以下從 **Boom 根目錄** 執行；先準備上述資料，路徑為範例，不會自動搬移你的 picture：
+影片直接轉為 30 FPS 推論，輸出新的標記 MP4 與候選事件紀錄；操作見 [doc/VIDEO_INFERENCE.md](doc/VIDEO_INFERENCE.md)。
+
+## 準備資料
+
+現在可直接啟動標記工具：
+
+```powershell
+conda activate boom
+python benchmark/ASTT/tools/prepare_dataset.py
+```
+
+加入影片 → S 標記異常開始、E 標記異常結束 → 每支按「完成此來源標記」→ 預覽分組 → 產生資料集與 `.npy`。標記與匯出固定 **30 FPS**，高幀率取樣、低幀率重複影格；圖片資料夾須已是 30 FPS 序列。未標記影格依本工具規則視為正常；至少兩個獨立來源群組，依 7:3 分 train／val。預設建立 `benchmark/ASTT/data/prepared/artillery-shell_v1/`，再次匯出建立新版本。操作與完整模型指令見 [doc/DATASET_PREPARATION.md](doc/DATASET_PREPARATION.md)，匯出版本內也有 README。訓練時 `--data-dir` 指向該版本目錄；查看效果使用 `test.py --split val`。
+
+以下是自行準備資料時的格式：
+
+1. 人工確認無煙霧的連續片段放入 `data/astt/train/<片段名稱>/`；缺少 JSON 不代表正常。
+2. 以不同原影片留出 val，分別放在 `data/astt/val/frames/<影片名稱>/` 與 `data/astt/test/frames/<影片名稱>/`。不要隨機拆相鄰幀。
+3. 預設每片段至少五張連續 JPG／PNG。剪接或不連續片段要拆開。
+4. LabelMe JSON 不能直接輸入 ASTT。計算 AUROC 需與抽幀排序一一對應的 binary `.npy`，放入 split 的 `test_frame_masks/<影片名稱>.npy`；0 正常、1 異常。缺標籤仍可輸出候選，但不能計算該影片 AUROC。
+
+## 執行
+
+從 **Boom 根目錄**：
 
 ```powershell
 conda activate boom
 python -m pip install -r benchmark/ASTT/requirements.txt
-python benchmark/ASTT/smoke_test.py
-python benchmark/ASTT/train.py --experiment-name astt_first --epochs 30 --batch-size 1 --device auto
-python benchmark/ASTT/test.py --checkpoint output/astt/astt_first/checkpoints/best.pth --experiment-name astt_test --batch-size 1 --device auto
+python benchmark/ASTT/tests/smoke_test.py
+python benchmark/ASTT/train.py --experiment-name astt_full_001 --epochs 30 --batch-size 8 --device cuda
+python benchmark/ASTT/test.py --split val --checkpoint output/astt/astt_full_001/checkpoints/best.pth --experiment-name astt_full_val_001 --batch-size 8 --device cuda
 ```
 
-每次使用新 experiment name，避免覆蓋。默认 train 使用正常資料；以 val MSE 選 best，test 不參與訓練。完整預設模型很大，先從 batch 1 開始；降低 layers/embedding 屬於小模型實驗，必須記錄，不能直接當論文基準。
+資料準備完才執行正式訓練；每次使用新 experiment name。完整模型預設為 STE＋TTE＋CSA，降低層數／維度會成為另一個小模型實驗。CPU 可用 `--device cpu`，顯存不足可調整 batch size 並記錄。
 
 ```powershell
-# 抽幀（如果已經有連續圖片，省略此步）
-python benchmark/ASTT/scripts/extract_frames.py data/video/normal.mp4 --split train --name normal_001 --fps 10
-# 恢復原本 30 epoch 排程，使用新輸出目錄
-python benchmark/ASTT/train.py --resume output/astt/astt_first/checkpoints/last.pth --experiment-name astt_resume --epochs 30 --batch-size 1
-# 使用 checkpoint 初始化新排程
-python benchmark/ASTT/train.py --checkpoint output/astt/astt_first/checkpoints/best.pth --experiment-name astt_finetune --epochs 10 --batch-size 1
+python benchmark/ASTT/tools/extract_frames.py data/video/normal.mp4 --split train --name normal_001 --fps 30
+python benchmark/ASTT/train.py --resume output/astt/astt_full_001/checkpoints/last.pth --experiment-name astt_resume_001 --epochs 30 --batch-size 8
 ```
 
-輸出位於 `output/astt/<experiment-name>/`：checkpoints、逐幀 scores、heatmaps、visualizations、events.csv、config.json、metrics.json。BBox 位於模型解析度；不是原圖像素或地面座標。詳見 README_LOCAL.md。
+輸出是 `output/astt/<experiment-name>/` 的 checkpoint、scores、heatmaps、visualizations、events.csv 與 metrics.json。候選框位於模型解析度；高誤差不保證是煙霧，ASTT 尚未接入即時相機或 GPS 定位。

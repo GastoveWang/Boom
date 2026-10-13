@@ -145,7 +145,6 @@ class GeoMap:
             with np.load(cache) as data:
                 self.canvas, self.coverage = data["canvas"], data["coverage"]
             self.gray = cv2.cvtColor(self.canvas, cv2.COLOR_BGR2GRAY)
-            cv2.imwrite(str(output / "map_preview.jpg"), self.canvas)
             return
         self.canvas = np.full((height, width, 3), 32, np.uint8)
         self.coverage = np.zeros((height, width), np.uint8)
@@ -170,7 +169,6 @@ class GeoMap:
             self.coverage[b:d, a:c][valid] = 255
         self.gray = cv2.cvtColor(self.canvas, cv2.COLOR_BGR2GRAY)
         np.savez_compressed(cache, canvas=self.canvas, coverage=self.coverage)
-        cv2.imwrite(str(output / "map_preview.jpg"), self.canvas)
 
     def matching_view(self, nearby, lon, lat):
         """Crop the loaded map for matching without shrinking its display extent."""

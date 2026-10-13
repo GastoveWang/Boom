@@ -86,10 +86,14 @@ submap 以資料夾分組；遠近使用 TIFF 地理 bounds 判定，不使用�
 每次執行仍建立不覆寫的 `output/offline/<video>_<method>[_NN]/`：
 
 - `output_<video>.mp4`：偵測畫面與地圖。
-- `ui_preview.jpg`：第一格 UI。
-- `map_preview.jpg`：具地理參考的地圖預覽。
+- 不再輸出 `ui_preview.jpg` 與 `map_preview.jpg`；既有檔案保留。
+- `map_match_*/NN_matches.jpg`：照片與每個候選地圖 ROI 的左右灰階匹配圖；綠線為 RANSAC 內點，紅線為外點或尚未驗證的對應點（例如匹配數不足）。成功、拒絕與無匹配點均保存，不需 `--map-debug`。
+- `map_match_rectified_*/matches.jpg`：斜拍校正後的照片與地圖匹配。
+- `photo_video_match_*/matches.jpg`：參考照片與影片影格對齊。
+- `map_correction_*/matches.jpg`：影片追蹤期間的地圖校正匹配。
+- 匹配圖旁的 JSON 保存匹配數、內點數／比例、重投影誤差、覆蓋率、耗時與通過／拒絕原因；影片匹配附上影格與時間。終端以 `[MATCH]` 印出相同數據，結束時以 `[DETECTION]` 印出事件座標紀錄。
 - `reference_ground_projection.jpg`：啟用 `--map-debug` 且執行斜拍 fallback 時的診斷圖。
-- `map_match_*/`：僅 `--map-debug` 啟用時產生 UAV／ROI／matches／inliers／footprint 與品質紀錄。
+- `--map-debug`：額外產生 UAV／ROI／inliers／footprint 診斷圖；一般匹配結果已預設保存。
 - `localization.jsonl`：初始化結果、影片每格狀態／座標／匹配品質與煙霧事件投影。
 - `region_selection.json`：各區域經緯度範圍、照片 GPS、估計拍攝中心與選區理由。
 - `*_impact_coordinates.txt`：事件座標與 `coordinate_status`；失效時 `coordinate=unavailable`。
@@ -105,6 +109,10 @@ python run_offline.py motion --video <影片> --reference-image <GPS照片> --al
 ```
 
 GPS 暫估的成功追蹤率不能代表地圖匹配成功率。
+
+影片逐格執行偵測與 VO，約每 5 秒嘗試一次地圖校正，失去追蹤時重試照片對齊；
+不是每格執行完整地圖匹配。上述資料夾只在實際匹配時建立；沒有候選地圖時僅留下失敗品質紀錄。
+綠線表示幾何內點，仍須通過地理範圍與姿態驗證才能使用該結果定位。
 
 先前 SIFT 版本的 0603 資料照片對地圖匹配未通過品質門檻。當時照片對影片匹配可用，
 因此 GPS 暫估模式可驗證 VO 與標點流程；**地圖視覺校正與真實定位誤差仍未驗證**。

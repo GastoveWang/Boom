@@ -29,8 +29,6 @@ Boom 離線執行期 - 主管線排程與生命週期調度 (runner.py)
 from contextlib import ExitStack
 import time
 
-import cv2
-
 from boom.detection import create_detector
 from .async_output import AsyncVideoOutput
 from .live_preview import run_with_preview
@@ -93,8 +91,6 @@ def _run(args, preview):
             history.expire(frame_idx)
             combined = compose_frame(visualization, history, video_path.name, localizer)
             output.write(combined)
-            if localizer and processed == 0:
-                cv2.imwrite(str(output_video_path.parent / "ui_preview.jpg"), combined)
             preview.publish(combined)
 
             frame_idx += 1
