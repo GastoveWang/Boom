@@ -39,7 +39,7 @@ python benchmark/ASTT/tools/prepare_dataset.py
 
 圖片資料夾沒有影片 FPS 資訊，工具將其視為**已經是 30 FPS 的影格序列**，按自然數字順序保留所有圖片與原檔名；不推測原始影格率。若圖片來自其他 FPS，請改加入原影片，才能自動統一。此處影片時間依 OpenCV 讀到的固定 FPS 計算；可變幀率（VFR）影片應先轉為固定幀率影片再標記。
 
-標記變更自動保存至 `benchmark/ASTT/output/annotations/annotations_<時間>.json`；可另存新檔，或下次按「載入標記專案」繼續。只有完成的起訖區段會保存，等待終點的起點不會保存。修改區段或開始新增區段後，需重新按完成。
+標記變更自動保存至 `output/astt/annotations/annotations_<時間>.json`；可另存新檔，或下次按「載入標記專案」繼續。只有完成的起訖區段會保存，等待終點的起點不會保存。修改區段或開始新增區段後，需重新按完成。
 
 新 JSON 為 version 2，記錄 `annotation_fps: 30`、30 FPS 區段、轉換後 `frame_count`、原始 `source_frame_count` 與原始 `fps`。舊版 version 1 的標記載入後會依原始影格對應轉換成 30 FPS 區段，所有來源回到「待標記」；請檢查區段並重新按完成。僅載入不會修改舊 JSON，可用「另存標記專案」保存新版。
 
@@ -55,12 +55,12 @@ Train 保留影格與標籤，ASTT loader **只使用歷史四幀＋下一幀全
 
 ## 產生資料集與 .npy
 
-按「產生資料集與 .npy」。預設輸出到 `benchmark/ASTT/data/prepared/artillery-shell_v1/`，再次匯出建立 `artillery-shell_v2/`，不覆寫先前版本、原影片、原圖片或既有 `data/astt/`。
+按「產生資料集與 .npy」。預設輸出到 `data/astt/prepared/artillery-shell_v1/`，再次匯出建立 `artillery-shell_v2/`，不覆寫先前版本、原影片、原圖片或既有 `data/astt/`。
 
 影片順序解碼，依標記時的同一對應表輸出 30 FPS 圖片序列：高幀率取樣、低幀率重複影格。每個 `.npy` 與輸出圖片順序一一對齊，完整保留你在 30 FPS 時間軸上標記的區段、單幀與兩端標籤。輸出幀數為 `ceil(原始幀數 × 30 / 原始 FPS)`，時長誤差小於一個輸出影格。圖片資料夾保留原編號缺幀資訊，ASTT loader 不會跨缺幀拼接窗口。
 
 ```text
-benchmark/ASTT/data/prepared/artillery-shell_v1/
+data/astt/prepared/artillery-shell_v1/
 ├── annotations.json             # 本次來源與人工區段快照
 ├── split_report.json            # 分配、比例、統計與警告
 ├── README.md                    # 此版本可直接使用的訓練／測試指令
@@ -81,11 +81,11 @@ benchmark/ASTT/data/prepared/artillery-shell_v1/
 
 ## 接到完整模型
 
-匯出完成後看該版本的 `README.md`。`--data-dir` 必須指向 **包含 astt 的版本目錄**，例如 `benchmark/ASTT/data/prepared/artillery-shell_v1`。從 Boom 根目錄執行：
+匯出完成後看該版本的 `README.md`。`--data-dir` 必須指向 **包含 astt 的版本目錄**，例如 `data/astt/prepared/artillery-shell_v1`。從 Boom 根目錄執行：
 
 ```powershell
-python benchmark/ASTT/scripts/train.py --data-dir "benchmark/ASTT/data/prepared/artillery-shell_v1" --output-dir benchmark/ASTT/output --selection auc --experiment-name astt_artillery_shell_001 --device cuda --batch-size 8 --epochs 30
-python benchmark/ASTT/scripts/test.py --split val --data-dir "benchmark/ASTT/data/prepared/artillery-shell_v1" --output-dir benchmark/ASTT/output --checkpoint benchmark/ASTT/output/astt/astt_artillery_shell_001/checkpoints/best.pth --experiment-name astt_artillery_shell_val_001 --device cuda --batch-size 8
+python benchmark/ASTT/scripts/train.py --data-dir "data/astt/prepared/artillery-shell_v1" --output-dir output --selection auc --experiment-name astt_artillery_shell_001 --device cuda --batch-size 8 --epochs 30
+python benchmark/ASTT/scripts/test.py --split val --data-dir "data/astt/prepared/artillery-shell_v1" --output-dir output --checkpoint output/astt/training/astt_artillery_shell_001/checkpoints/best.pth --experiment-name astt_artillery_shell_val_001 --device cuda --batch-size 8
 ```
 
 `--selection auc` 要求 val 可評分幀含兩類；不符合時匯出的 README 會使用 `--selection mse`，請以該文件為準。模型維持完整 STE＋TTE＋CSA 預設值。每次訓練使用新的 experiment name。訓練結束已會用最佳權重輸出 val 的熱圖、候選事件與指標；也可用上面 `test.py --split val` 重新產生。這些是 validation 結果。
@@ -96,12 +96,12 @@ python benchmark/ASTT/scripts/test.py --split val --data-dir "benchmark/ASTT/dat
 
 ```powershell
 # 只預覽，不產生資料集
-python benchmark/ASTT/tools/prepare_dataset.py --project "benchmark/ASTT/output/annotations/你的標記專案.json" --preview
+python benchmark/ASTT/tools/prepare_dataset.py --project "output/astt/annotations/你的標記專案.json" --preview
 
 # 使用保存的標記建立下一個新版本
-python benchmark/ASTT/tools/prepare_dataset.py --project "benchmark/ASTT/output/annotations/你的標記專案.json" --export --output-parent benchmark/ASTT/data/prepared --name "artillery-shell" --ratios 7 3 --seed 2026
+python benchmark/ASTT/tools/prepare_dataset.py --project "output/astt/annotations/你的標記專案.json" --export --output-parent data/astt/prepared --name "artillery-shell" --ratios 7 3 --seed 2026
 
 # 載入專案繼續標記
-python benchmark/ASTT/tools/prepare_dataset.py --project "benchmark/ASTT/output/annotations/你的標記專案.json"
+python benchmark/ASTT/tools/prepare_dataset.py --project "output/astt/annotations/你的標記專案.json"
 
 ```

@@ -4,14 +4,18 @@ from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DATA_ROOT = PROJECT_ROOT / 'data'
+OUTPUT_ROOT = PROJECT_ROOT / 'output'
+PREPARED_ROOT = DATA_ROOT / 'astt' / 'prepared'
+ANNOTATIONS_ROOT = OUTPUT_ROOT / 'astt' / 'annotations'
 MODEL_KEYS = ('image_size', 'patch_size', 'emb_dim', 'mlp_dim', 'num_heads',
               'spatial_layers', 'temporal_layers', 'num_frames', 'dropout_rate')
 
 
 def parser(training=True):
     p = argparse.ArgumentParser(description='ASTT future-frame prediction and candidate localization')
-    p.add_argument('--data-dir', type=Path, default=PROJECT_ROOT/'data', help='Root containing astt/')
-    p.add_argument('--output-dir', type=Path, default=PROJECT_ROOT/'output')
+    p.add_argument('--data-dir', type=Path, default=DATA_ROOT, help='Root containing astt/; prepared datasets use their version directory')
+    p.add_argument('--output-dir', type=Path, default=OUTPUT_ROOT, help='Root containing astt/training/ and astt/results/')
     p.add_argument('--experiment-name', default=datetime.now().strftime('%Y%m%d_%H%M%S_%f'))
     p.add_argument('--device', choices=['auto', 'cpu', 'cuda'], default='auto')
     p.add_argument('--batch-size', type=int, default=8)

@@ -16,7 +16,7 @@ python tools/split_dataset.py
 python tools/train_yolo.py
 python benchmark/ASTT/scripts/train.py --experiment-name astt_first --epochs 30 --batch-size 1
 python benchmark/ASTT/tools/prepare_dataset.py
-python benchmark/ASTT/scripts/test.py --split val --checkpoint output/astt/astt_first/checkpoints/best.pth --experiment-name astt_val --batch-size 1
+python benchmark/ASTT/scripts/test.py --split val --checkpoint output/astt/training/astt_first/checkpoints/best.pth --experiment-name astt_val --batch-size 1
 ```
 
 影片／模型路徑為示例，須替換成現有檔案。ASTT 訓練前準備正常 train 與獨立 val；測試需本機版權重。即時相機需原廠 PySpin SDK。YOLO 訓練的模型、資料集與超參數由互動提示選擇，細節見 [TOOLS.md](TOOLS.md)。

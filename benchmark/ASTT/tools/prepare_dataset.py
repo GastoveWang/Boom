@@ -10,11 +10,11 @@ from pathlib import Path
 import sys
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-ASTT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from benchmark.ASTT.src.annotations import export_dataset, load_project, plan_split
+from benchmark.ASTT.src.config import PREPARED_ROOT
 
 
 def main():
@@ -26,7 +26,7 @@ def main():
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument('--export', action='store_true', help='從標記專案匯出，不開啟 GUI')
     modes.add_argument('--preview', action='store_true', help='只預覽資料分組，不寫入輸出')
-    parser.add_argument('--output-parent', type=Path, default=ASTT_ROOT / 'data' / 'prepared')
+    parser.add_argument('--output-parent', type=Path, default=PREPARED_ROOT)
     parser.add_argument('--name', default='artillery-shell', help='新版本名稱前綴，預設 artillery-shell')
     parser.add_argument('--ratios', type=float, nargs=2, default=(7., 3.), metavar=('TRAIN', 'VAL'), help='train／val 比例，預設 7:3')
     parser.add_argument('--seed', type=int, default=2026)

@@ -13,6 +13,7 @@ import uuid
 
 import cv2
 import numpy as np
+from .config import OUTPUT_ROOT
 
 IMAGE_SUFFIXES = {'.jpg', '.jpeg', '.png'}
 SPLITS = ('train', 'val')
@@ -361,7 +362,7 @@ def export_dataset(sources, output_parent, name='artillery-shell', ratios=(7., 3
                                'split': plan['assignments'][s.id]} for s in sources]}
         (output / 'split_report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
         experiment = f'astt_{safe_name(output.name)}'
-        results_root = Path(__file__).resolve().parents[1] / 'output'
+        results_root = OUTPUT_ROOT
         (output / 'README.md').write_text(
             '<!-- 檔案功能：本次人工標記資料集的使用方式。 -->\n\n'
             '# ASTT 標記資料集\n\n依來源群組分 train／val，預設 7:3；未標記正常 0，標記異常 1。\n'
@@ -371,7 +372,7 @@ def export_dataset(sources, output_parent, name='artillery-shell', ratios=(7., 3
             '所有片段依來源群組分配；比例按群組數近似，不是隨機切單張圖片。\n\n'
             f'從 Boom 根目錄執行：\n\n```powershell\n'
             f'python benchmark/ASTT/scripts/train.py --data-dir "{output}" --output-dir "{results_root}" --selection {plan["selection"]} --experiment-name "{experiment}" --device cuda --batch-size 8 --epochs 30\n'
-            f'python benchmark/ASTT/scripts/test.py --split val --data-dir "{output}" --output-dir "{results_root}" --checkpoint "{results_root / "astt" / experiment / "checkpoints" / "best.pth"}" --experiment-name "{experiment}_val" --device cuda --batch-size 8\n```\n'
+            f'python benchmark/ASTT/scripts/test.py --split val --data-dir "{output}" --output-dir "{results_root}" --checkpoint "{results_root / "astt" / "training" / experiment / "checkpoints" / "best.pth"}" --experiment-name "{experiment}_val" --device cuda --batch-size 8\n```\n'
             'val 用於選模與查看效果，本版本沒有獨立 test。\n'
             '如已執行過同名實驗，請更換 experiment-name，並對應修改測試的 checkpoint 路徑。\n', encoding='utf-8')
         return report

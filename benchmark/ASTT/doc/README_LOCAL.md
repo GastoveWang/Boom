@@ -56,7 +56,7 @@ python -m pip install -r benchmark/ASTT/requirements.txt
 
 ## 資料格式
 
-可用 [影片標記工具](DATASET_PREPARATION.md) 標記異常時間區段，將未標記影格按本次專案規則視為正常，並依 7:3 自動分 train／val 與生成 `.npy`。預設版本路徑 `benchmark/ASTT/data/prepared/artillery-shell_v1/astt/`；訓練／測試需加 `--data-dir "benchmark/ASTT/data/prepared/artillery-shell_v1"`。工具會生成 train 標籤，loader 只使用 input＋target 全部正常的窗口。此工具只匯出 train／val；查看結果使用 `test.py --split val`。以下手動格式仍支援額外的獨立 test。
+可用 [影片標記工具](DATASET_PREPARATION.md) 標記異常時間區段，將未標記影格按本次專案規則視為正常，並依 7:3 自動分 train／val 與生成 `.npy`。預設版本路徑 `data/astt/prepared/artillery-shell_v1/astt/`；訓練／測試需加 `--data-dir "data/astt/prepared/artillery-shell_v1"`。工具會生成 train 標籤，loader 只使用 input＋target 全部正常的窗口。此工具只匯出 train／val；查看結果使用 `test.py --split val`。以下手動格式仍支援額外的獨立 test。
 
 以下格式仍可手動建立：
 
@@ -99,19 +99,19 @@ python benchmark/ASTT/scripts/train.py --experiment-name baseline_001 --epochs 3
 
 ```powershell
 python benchmark/ASTT/scripts/train.py --experiment-name auc_001 --selection auc --epochs 30 --batch-size 2
-python benchmark/ASTT/scripts/train.py --resume output\astt\baseline_001\checkpoints\last.pth --experiment-name baseline_resume --epochs 30 --batch-size 2
-python benchmark/ASTT/scripts/train.py --checkpoint output\astt\baseline_001\checkpoints\best.pth --experiment-name finetune_001 --epochs 10 --batch-size 2
+python benchmark/ASTT/scripts/train.py --resume output\astt\training\baseline_001\checkpoints\last.pth --experiment-name baseline_resume --epochs 30 --batch-size 2
+python benchmark/ASTT/scripts/train.py --checkpoint output\astt\training\baseline_001\checkpoints\best.pth --experiment-name finetune_001 --epochs 10 --batch-size 2
 ```
 
 `--resume` 恢復 model、optimizer、OneCycle scheduler、epoch、best score 與 Torch RNG；總 epochs、每 epoch steps、selection 和 registration 必須相同。它是完成原排程，不是任意延長 OneCycle；旁邊須保留同實驗的 `best.pth`，續訓新目錄也會保留此前最佳模型。`--checkpoint` 只初始化 model，開始新的 optimizer／排程；與 resume 互斥。使用本版存出的 checkpoint，拒絕自動猜測舊權重格式。
 
-每次用新的 experiment name，已存在目錄會拒絕覆寫；預設名稱包含時間。若中途中止，保留已完成 epoch 的 checkpoint。CLI 可覆寫 `--data-dir D:\datasets --output-dir D:\results`，它們是 data/output **根目錄**，程式會再附加 `astt/`。
+每次用新的 experiment name，已存在目錄會拒絕覆寫；預設名稱包含時間。若中途中止，保留已完成 epoch 的 checkpoint。CLI 可覆寫 `--data-dir D:\datasets --output-dir D:\results`；data 根下須包含 `astt/<split>/`，output 根下自動依入口建立 `astt/training/<experiment-name>/` 或 `astt/results/<experiment-name>/`。
 
 ## 測試／推論
 
 ```powershell
-python benchmark/ASTT/scripts/test.py --checkpoint output\astt\baseline_001\checkpoints\best.pth --experiment-name test_001 --device auto --batch-size 2
-python benchmark/ASTT/scripts/test.py --split val --checkpoint output\astt\baseline_001\checkpoints\best.pth --experiment-name val_review
+python benchmark/ASTT/scripts/test.py --checkpoint output\astt\training\baseline_001\checkpoints\best.pth --experiment-name test_001 --device auto --batch-size 2
+python benchmark/ASTT/scripts/test.py --split val --checkpoint output\astt\training\baseline_001\checkpoints\best.pth --experiment-name val_review
 ```
 
 Test 預設 `--split test`，必須明確給 checkpoint，不會以隨機權重推論。Inference 的模型尺寸由 checkpoint 讀取。
@@ -121,7 +121,8 @@ Scalar score 是原始 MSE，值越高越異常，不在每影片 min-max 正規
 ## 輸出
 
 ```text
-Boom/output/astt/<experiment_name>/
+Boom/output/astt/training/<experiment_name>/（訓練）
+或 Boom/output/astt/results/<experiment_name>/（測試／影片推論）
   checkpoints/best.pth, last.pth  # training 存出，test 不複製大型 checkpoint
   scores/<video>.npy             # 長度 L；不可評分位置為 NaN
   heatmaps/<video>/<frame_index>.npy   # 原始 float32 H×W channel-mean error
@@ -143,7 +144,7 @@ Error map `E[y,x] = mean_channel((prediction−target)^2)`；scalar score = E.me
 `--min-event-frames 3` 要求至少連續 3 個評分幀命中才能確認；`--event-iou 0.3` 為相鄰 bbox 關聯門檻；`--event-max-gap 2` 容忍漏檢 2 幀仍保持同事件。確認後持續烟塵不每幀新增事件。超過 gap、IoU 不足、分裂或大幅 camera motion 仍可能形成新事件；單純 IoU 不是專業煙霧 tracker。參數以**抽幀後幀數**計，10 FPS 下 3 幀約 0.3 秒觀察窗口（首次命中到第三次命中約 0.2 秒）。
 
 ```powershell
-python benchmark/ASTT/scripts/test.py --checkpoint output\astt\baseline_001\checkpoints\best.pth --experiment-name localized_001 --threshold 0.15 --min-area 40 --min-event-frames 5 --event-iou 0.3 --event-max-gap 2
+python benchmark/ASTT/scripts/test.py --checkpoint output\astt\training\baseline_001\checkpoints\best.pth --experiment-name localized_001 --threshold 0.15 --min-area 40 --min-event-frames 5 --event-iou 0.3 --event-max-gap 2
 ```
 
 Threshold 請以正常 validation 的 error 分布及誤報/漏報調整，不能用 test labels 調參再把同一 test 結果作無偏比較。高誤差也可能来自雲霧、光線變化、粉塵、未建模場景或相機運動，不保證是煙。
@@ -154,7 +155,7 @@ Threshold 請以正常 validation 的 error 分布及誤報/漏報調整，不�
 
 ```powershell
 python benchmark/ASTT/scripts/train.py --registration --experiment-name registered_001 --epochs 30 --batch-size 2
-python benchmark/ASTT/scripts/test.py --registration --checkpoint output\astt\registered_001\checkpoints\best.pth --experiment-name registered_test
+python benchmark/ASTT/scripts/test.py --registration --checkpoint output\astt\training\registered_001\checkpoints\best.pth --experiment-name registered_test
 ```
 
 這只穩定歷史 context，不能消除最後 input→future target 的相機運動；對 parallax、尺度變化、透視、rolling shutter、大面積煙霧／動態前景仍有限，邊界反射填補也可能產生誤差。ECC 增加 CPU latency，不宜直接聲稱可以機載即時。需要在 UAV 資料比較 registration on/off、誤報、漏報、事件延遲、FPS 和定位誤差。

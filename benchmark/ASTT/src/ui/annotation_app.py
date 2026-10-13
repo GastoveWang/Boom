@@ -14,8 +14,7 @@ import cv2
 from ..annotations import (TARGET_FPS, ExportCancelled, Source, export_dataset, load_project,
                                    normalize_intervals, plan_split, sample_indices, save_project)
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
-ASTT_ROOT = Path(__file__).resolve().parents[2]
+from ..config import PROJECT_ROOT, PREPARED_ROOT, ANNOTATIONS_ROOT
 
 
 class AnnotationApp:
@@ -37,11 +36,11 @@ class AnnotationApp:
         self.cancel = threading.Event()
         self.messages = queue.Queue()
         self.project_path = Path(project).resolve() if project else (
-            ASTT_ROOT / 'output' / 'annotations' / f'annotations_{datetime.now():%Y%m%d_%H%M%S_%f}.json')
+            ANNOTATIONS_ROOT / f'annotations_{datetime.now():%Y%m%d_%H%M%S_%f}.json')
         self.position = tk.IntVar(value=0)
         self.speed = tk.StringVar(value='1')
         self.origin = tk.StringVar()
-        self.output_parent = tk.StringVar(value=str(ASTT_ROOT / 'data' / 'prepared'))
+        self.output_parent = tk.StringVar(value=str(PREPARED_ROOT))
         self.dataset_name = tk.StringVar(value='artillery-shell')
         self.ratios = tk.StringVar(value='7:3')
         self.status = tk.StringVar(value='加入影片或影格資料夾後，標記你要偵測的變化區段。')
@@ -487,7 +486,7 @@ class AnnotationApp:
 
     def choose_output(self):
         if not self.busy:
-            path = filedialog.askdirectory(parent=self.root, title='資料集版本的存放位置', initialdir=ASTT_ROOT)
+            path = filedialog.askdirectory(parent=self.root, title='資料集版本的存放位置', initialdir=PREPARED_ROOT)
             if path:
                 self.output_parent.set(path)
 

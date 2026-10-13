@@ -205,10 +205,15 @@ def evaluate(model, ds, args, device, output=None, stage='Validation', progress_
     return metrics
 
 
-def create_output(args):
-    output = args.output_dir.resolve()/'astt'/args.experiment_name
+def create_output(args, category='results'):
+    if category not in {'training', 'results'}:
+        raise ValueError('Output category must be training or results')
+    output = args.output_dir.resolve()/'astt'/category/args.experiment_name
     output.mkdir(parents=True, exist_ok=False)  # never silently overwrite experiments
-    for folder in ('checkpoints','scores','heatmaps','visualizations'):
+    folders = ('scores', 'heatmaps', 'visualizations')
+    if category == 'training':
+        folders = ('checkpoints', *folders)
+    for folder in folders:
         (output/folder).mkdir()
     with (output/'events.csv').open('w', newline='', encoding='utf-8') as stream:
         csv.writer(stream).writerow(EVENT_FIELDS)
@@ -219,6 +224,7 @@ def save_config(args, config, output):
     settings = {k: str(v.resolve()) if isinstance(v, Path) else v for k,v in vars(args).items()}
     settings['model_config'] = config
     settings['project_root'] = str(PROJECT_ROOT)
+    settings['output_category'] = output.parent.name
     settings['method'] = 'ASTT STE+TTE+CSA; spatial localization and event merging are Boom extensions'
     (output/'config.json').write_text(json.dumps(settings, indent=2), encoding='utf-8')
 
@@ -276,7 +282,7 @@ def train(args):
         prior_best = load_checkpoint(prior_best_path, device)
         if prior_best['model_config'] != config or prior_best.get('best') != best:
             raise ValueError('Sibling best.pth does not match the resumed experiment')
-    output = create_output(args)
+    output = create_output(args, category='training')
     save_config(args, config, output)
     if args.resume:
         torch.save(prior_best, output/'checkpoints'/'best.pth')

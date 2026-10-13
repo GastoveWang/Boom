@@ -10,18 +10,18 @@ from pathlib import Path
 import sys
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-ASTT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from benchmark.ASTT.src.video_inference import infer_video
+from benchmark.ASTT.src.config import OUTPUT_ROOT
 
 
 def main():
     p = argparse.ArgumentParser(description='Load ASTT weights and process a new video at 30 FPS')
     p.add_argument('--video', type=Path, required=True)
     p.add_argument('--checkpoint', type=Path, required=True)
-    p.add_argument('--output-dir', type=Path, default=ASTT_ROOT / 'output')
+    p.add_argument('--output-dir', type=Path, default=OUTPUT_ROOT, help='Root containing astt/results/')
     p.add_argument('--experiment-name', default='video_' + datetime.now().strftime('%Y%m%d_%H%M%S_%f'))
     p.add_argument('--device', choices=['auto', 'cpu', 'cuda'], default='auto')
     p.add_argument('--batch-size', type=int, default=8)

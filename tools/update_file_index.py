@@ -154,7 +154,7 @@ def main():
         'python tools/check_camera.py --frames 30', 'python tools/video_to_frames.py data/video/example.mp4 --interval 0.5',
         'python tools/split_dataset.py', 'python tools/train_yolo.py',
         'python benchmark/ASTT/scripts/train.py --experiment-name astt_first --epochs 30 --batch-size 1',
-        'python benchmark/ASTT/scripts/test.py --checkpoint output/astt/astt_first/checkpoints/best.pth --experiment-name astt_test --batch-size 1', '```', '',
+        'python benchmark/ASTT/scripts/test.py --checkpoint output/astt/training/astt_first/checkpoints/best.pth --experiment-name astt_test --batch-size 1', '```', '',
         '影片／模型路徑為示例，須替換成現有檔案。ASTT 訓練前準備正常 train 與獨立 val；測試需本機版權重。即時相機需原廠 PySpin SDK。YOLO 訓練的模型、資料集與超參數由互動提示選擇，細節見 [TOOLS.md](TOOLS.md)。', '',
         '## Boom YAML 設定', '', '讀取順序與作用見 [configs/README.md](../configs/README.md)。CLI 值可覆蓋對應設定；非所有 YAML 值都由每個 runner 使用，請以 CLI 和 loader 實作為準。保留目前使用者設定，這裡只列出內容。', '']
     for path in sorted((ROOT/'configs').glob('*.yaml')):
