@@ -8,6 +8,21 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 PURPOSES = {
+    'train_st2.py': '根目錄ST²訓練與最佳權重自動影片推論入口。',
+    'src/st2/cli/export_tensorboard.py': '將舊 metrics.jsonl 匯入獨立 TensorBoard 事件目錄，不修改來源。',
+    'src/st2/cli/train.py': 'ST² 訓練、驗證、續訓與訓練後自動推論。',
+    'src/st2/cli/infer.py': 'ST² 批次影片推論與逐幀分數輸出。',
+    'src/st2/models/network.py': '正常畫面 predictor、關注模型與主要損失。',
+    'src/st2/models/motion.py': '可學習背景配準、框外 loss 與連續相機增強。',
+    'src/st2/data/sequence.py': '來源分組、連續影格與資料 fingerprint 檢查。',
+    'src/st2/data/dataset.py': '8 張歷史與當前影格、全部 ROI mask 的資料集。',
+    'src/st2/common/utils.py': '前處理、JSON、抽樣與 checkpoint 共用工具。',
+    'src/st2/engine/view.py': 'MSE heatmap 三欄畫面與固定範圍曲線。',
+    'src/st2/engine/postprocess.py': '固定分數正規化與可選推論運動檢查。',
+    'doc/ST2.md': '現行 ST² 模型、損失與訓練／推論指令。',
+    'doc/ST2_DATASET.md': 'ST² 逐幀標註與版本資料集匯出。',
+    'doc/history/SMOKE_HEATMAP.md': '歷史：已移除的 Smoke Heatmap 模型與實驗。',
+
     'AGENTS.md': '專案目標、功能優先順序與修改／驗證原則。',
     'pyproject.toml': 'Boom 套件、Python 版本、基礎／ML／ONNX／地圖依賴與安裝設定。',
     'doc/PROJECT_STRUCTURE.md': '專案架構、偵測流程與離線／即時執行範例。',
@@ -16,6 +31,8 @@ PURPOSES = {
     'doc/MAP_LOCALIZATION.md': 'GeoTIFF 地圖、特徵匹配、參考照片與地面定位。',
     'doc/ASSET_UI.md': '地圖與 UI 圖示資源的來源與用途。',
     'doc/TOOLS.md': '抽幀、YOLO 資料切分、訓練與 ONNX 匯出指令。',
+    'doc/history/BBOX_TEMPORAL_MODEL.md': '歷史：已移除的 BBox 時序模型。',
+    'doc/history/SMOKE_HEATMAP_DATASET.md': '歷史標註文件的導向紀錄。',
     'doc/FILE_INDEX.md': '專案逐檔用途與資源目錄索引。',
     'doc/RUN_SETTINGS.md': '執行入口、目前 YAML 值與 CLI 完整參數表。',
     'doc/README.md': '文件入口與比較專案的 Git 追蹤規則。',
@@ -28,6 +45,9 @@ PURPOSES = {
     'run_realtime.py': 'Spinnaker 即時相機入口：取像、偵測、畫面顯示與事件保存。',
     'tools/check_camera.py': '列出 PySpin SDK 與相機，可指定幀數驗證取像。',
     'tools/video_to_frames.py': '將影片依時間間隔抽成圖片，保留原始解析度。',
+    'src/st2/cli/prepare.py': 'Boom ST² 標註介面、分組預覽及版本資料匯出。',
+    'src/st2/data/annotations.py': '逐幀手動 ROI 標註、來源群組分配及安全版本匯出。',
+    'src/st2/data/editor.py': '時間區段、逐幀畫框與縮放修改的 Tkinter 介面。',
     'tools/split_dataset.py': 'YOLO 偵測／分割資料版本管理、平衡切分與 GUI。',
     'tools/train_yolo.py': '互動式 YOLO 訓練、選擇本機模型與 ONNX 匯出。',
     'tools/benchmark_matchers.py': '同影像對比較 EDM 與 SuperPoint/LightGlue 的匹配表現。',
@@ -110,18 +130,21 @@ def cli_table(parser):
 
 
 def main():
+    protected_storage = (ROOT / 'benchmark/ASTT/data', ROOT / 'benchmark/ASTT/output')
     files = list(ROOT.glob('*.py'))
     for folder in ('src', 'tools', 'benchmark/ASTT'):
         files.extend((ROOT/folder).rglob('*.py'))
     files = sorted(path for path in files
-                   if not path.is_relative_to(ROOT / 'benchmark/ASTT/origin'))
+                   if not path.is_relative_to(ROOT / 'benchmark/ASTT/origin')
+                   and not any(path.is_relative_to(folder) for folder in protected_storage))
     for path in files:
         annotate(path, purpose(path))
     other = [ROOT/'pyproject.toml', ROOT/'.gitignore', ROOT/'AGENTS.md']
     for folder in ('configs', 'doc'):
-        other.extend(p for p in (ROOT/folder).iterdir() if p.is_file())
+        other.extend(p for p in (ROOT/folder).rglob('*') if p.is_file())
     other.extend(p for p in (ROOT/'benchmark/ASTT').rglob('*') if p.is_file()
-                 and (p.suffix in ('.md', '.txt') or p.name == '.gitignore'))
+                 and (p.suffix in ('.md', '.txt') or p.name == '.gitignore')
+                 and not any(p.is_relative_to(folder) for folder in protected_storage))
     rows = ['# Boom 逐檔功能索引', '', 'Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統，目標是在影像中即時標示煙霧區域，並估算疑似煙霧源的地面座標。', '',
         '此索引涵蓋專案原始碼、工具、設定與文件；Python 檔案頂端也有功能註記。資料、權重、輸出、第三方標註軟體與 Git/快取不逐檔註記，以免修改使用者資料。', '',
         '直接執行的入口和參數見 [RUN_SETTINGS.md](RUN_SETTINGS.md)，ASTT 分組見 [START_HERE.md](../benchmark/ASTT/doc/START_HERE.md)。', '', '| 檔案 | 功能 |', '|---|---|']
@@ -132,7 +155,7 @@ def main():
         rows.append(f'| [{rel}](../{rel}) | {purpose(path)} |')
     rows.extend(['', '## 資源與未納入 Git 的目錄', '', '| 目錄 | 功能 |', '|---|---|',
         '| data/picture | 使用者影格與標註；不自動改寫或視為正常資料。 |',
-        '| data/astt | ASTT 的 train、val、test 影格與逐幀標籤。 |',
+        '| benchmark/ASTT/data/astt | ASTT 的 train、val、test 影格與逐幀標籤。 |',
         '| data/yolo_datasets | YOLO 原始／版本化訓練資料。 |',
         '| data/video、data/raw_video | 影片輸入。 |',
         '| models | 預訓練權重、checkpoint 與 ONNX，不提交大型模型。 |',
@@ -145,6 +168,7 @@ def main():
     sys.path[:0] = [str(ROOT/'src'), str(ROOT)]
     from boom.pipelines.cli import build_arg_parser as offline_parser
     from boom.online.configuration import build_arg_parser as online_parser
+    from st2.engine.train import parser as st2_parser
     from benchmark.ASTT.src import config as module
     sections = ['# 執行入口與完整設定', '',
         '從 Boom 根目錄執行。以下 CLI 表由目前 argparse 定義產生；絕對路徑以 `<Boom>` 表示專案根。ASTT 的資料／輸出根會再附加 astt/；修改 configs/*.yaml 不會改 ASTT 設定。', '',
@@ -153,13 +177,18 @@ def main():
         'python run_realtime.py motion --display', 'python run_realtime.py yolo --display',
         'python tools/check_camera.py --frames 30', 'python tools/video_to_frames.py data/video/example.mp4 --interval 0.5',
         'python tools/split_dataset.py', 'python tools/train_yolo.py',
+        'python train_st2.py',
+        'python src/st2 prepare',
+        'python src/st2 train --help',
+        'python src/st2 infer --help',
         'python benchmark/ASTT/scripts/train.py --experiment-name astt_first --epochs 30 --batch-size 1',
-        'python benchmark/ASTT/scripts/test.py --checkpoint output/astt/training/astt_first/checkpoints/best.pth --experiment-name astt_test --batch-size 1', '```', '',
+        'python benchmark/ASTT/scripts/test.py --checkpoint benchmark/ASTT/output/astt/training/astt_first/checkpoints/best.pth --experiment-name astt_test --batch-size 1', '```', '',
         '影片／模型路徑為示例，須替換成現有檔案。ASTT 訓練前準備正常 train 與獨立 val；測試需本機版權重。即時相機需原廠 PySpin SDK。YOLO 訓練的模型、資料集與超參數由互動提示選擇，細節見 [TOOLS.md](TOOLS.md)。', '',
         '## Boom YAML 設定', '', '讀取順序與作用見 [configs/README.md](../configs/README.md)。CLI 值可覆蓋對應設定；非所有 YAML 值都由每個 runner 使用，請以 CLI 和 loader 實作為準。保留目前使用者設定，這裡只列出內容。', '']
     for path in sorted((ROOT/'configs').glob('*.yaml')):
         sections.extend(['### '+path.name, '', '```yaml', path.read_text(encoding='utf-8-sig').rstrip(), '```', ''])
     for title, parser in [('Boom 離線 CLI', offline_parser()), ('Boom 即時 CLI', online_parser()),
+                          ('ST² 訓練 CLI', st2_parser()),
                           ('ASTT 訓練 CLI', module.parser(True)), ('ASTT 測試 CLI', module.parser(False))]:
         sections.extend(['## '+title, '', cli_table(parser), ''])
     for filename in ('check_camera.py', 'video_to_frames.py', 'split_dataset.py', 'benchmark_matchers.py', 'train_yolo.py'):
@@ -189,7 +218,7 @@ def main():
     sections.extend(['## ASTT 抽幀設定', '', '| 參數 | 預設 | 用途 |', '|---|---|---|',
         '| video | 必填 | 來源影片路徑。 |', '| --fps | 10 | 抽幀 FPS，不得高於來源 FPS。 |',
         '| --name | 影片 stem | 片段資料夾名稱，已存在則拒絕覆寫。 |',
-        '| --split | train | train、val 或 test。 |', '| --data-dir | <Boom>/data | 根目錄，會附加 astt/<split>。 |', '',
+        '| --split | train | train、val 或 test。 |', '| --data-dir | <Boom>/benchmark/ASTT/data | 根目錄，會附加 astt/<split>。 |', '',
         '模型設定由 checkpoint 載入時，以權重內 model_config 為準；registration 必須與訓練一致。resume 要保持原總 epochs、每 epoch steps 和選模方式。threshold/min-area 等只影響候選區域，不是煙霧分類信心。更多格式和限制見 [ASTT 本機說明](../benchmark/ASTT/doc/README_LOCAL.md)。'])
     (ROOT/'doc/RUN_SETTINGS.md').write_text('\n'.join(sections)+'\n', encoding='utf-8')
     print(f'Annotated {len(files)} Python files and regenerated reference documents.')

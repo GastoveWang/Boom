@@ -1,5 +1,7 @@
 # 執行入口與完整設定
 
+> 2026-10-27 更新：ST²統一入口為`python src/st2 train`／`infer`／`prepare`／`export-tensorboard`；實作與CLI均收在src/st2。資料為data/st2/prepared/st2_v1、輸出output/st2，完整設定見 [ST2.md](ST2.md)。Boom名稱及motion／YOLO設定不變。
+
 從 Boom 根目錄執行。以下 CLI 表由目前 argparse 定義（ASTT 位於 benchmark/ASTT/src/config.py）產生；絕對路徑以 `<Boom>` 表示專案根。ASTT 的資料／輸出根會再附加 astt/；修改 configs/*.yaml 不會改 ASTT 設定。
 
 ## 常用入口
@@ -14,14 +16,20 @@ python tools/check_camera.py --frames 30
 python tools/video_to_frames.py data/video/example.mp4 --interval 0.5
 python tools/split_dataset.py
 python tools/train_yolo.py
+python src/st2 train --epochs 30 --device cuda
+python src/st2 prepare
 python benchmark/ASTT/scripts/train.py --experiment-name astt_first --epochs 30 --batch-size 1
 python benchmark/ASTT/tools/prepare_dataset.py
-python benchmark/ASTT/scripts/test.py --split val --checkpoint output/astt/training/astt_first/checkpoints/best.pth --experiment-name astt_val --batch-size 1
+python benchmark/ASTT/scripts/test.py --split val --checkpoint benchmark/ASTT/output/astt/training/astt_first/checkpoints/best.pth --experiment-name astt_val --batch-size 1
 ```
 
 影片／模型路徑為示例，須替換成現有檔案。ASTT 訓練前準備正常 train 與獨立 val；測試需本機版權重。即時相機需原廠 PySpin SDK。YOLO 訓練的模型、資料集與超參數由互動提示選擇，細節見 [TOOLS.md](TOOLS.md)。
 
 ## Boom YAML 設定
+
+ST² 使用 `src/st2/cli/train.py` 訓練／續訓、`src/st2/cli/infer.py` 推論，主體位於 `src/st2/`。設定由 CLI 與 checkpoint 決定，不由既有 Boom YAML 控制，詳見 [模型與操作](ST2.md)。舊 Smoke Heatmap 工具已移除，只使用現行ST²入口。
+
+ST²標註 UI 使用 `src/st2/cli/prepare.py`，新標註及版本資料分別位於 `output/st2/annotations/`、`data/st2/prepared/`。既有 astt_bbox 資料已更名為 `data/st2/prepared/st2_v1`；參數及操作見 [標註工具](ST2_DATASET.md)，與原版 ASTT 的入口及設定分開。
 
 讀取順序與作用見 [configs/README.md](../configs/README.md)。CLI 值可覆蓋對應設定；非所有 YAML 值都由每個 runner 使用，請以 CLI 和 loader 實作為準。保留目前使用者設定，這裡只列出內容。
 
@@ -278,12 +286,48 @@ ui:
 | `--drone-pitch` | `-45.0` | drone pitch |
 | `--drone-roll` | `0.0` | drone roll |
 
+## ST² 訓練 CLI
+
+根目錄`python train_st2.py`會預設加上推論來源`data/video/1440-1080/0603`，訓練成功後自動以best.pt推論；參數仍共用下表。`python src/st2 train`的infer_source預設為None，維持可選推論。
+
+入口：`python src/st2 train`。以下預設值直接由目前parser讀取；續訓時部分值會從checkpoint恢復。ST²推論與資料標註指令見 [ST2.md](ST2.md) 及 [ST2_DATASET.md](ST2_DATASET.md)。
+
+| 參數 | 預設值 | 用途／限制 |
+|---|---|---|
+| `--data` | `<Boom>\data\st2\prepared\st2_v1` | data |
+| `--output` | `<Boom>\output\st2\training` | output |
+| `--epochs` | `30` | epochs |
+| `--history-frames` | `8` | Past inputs; current scoring frame is separate |
+| `--height` | `576` | height |
+| `--width` | `768` | width |
+| `--batch-size` | `4` | batch size |
+| `--embedding-dim` | `128` | embedding dim |
+| `--model-variant` | `transformer` | model variant；可選 transformer |
+| `--patch-size` | `16` | Transformer-only RGB patch side |
+| `--transformer-layers` | `2` | Transformer-only space/time block count |
+| `--window-size` | `6` | Transformer-only spatial window side in patches |
+| `--camera-augmentation` | `0.5` | Training-only coherent camera trajectory probability |
+| `--motion-loss-weight` | `0.2` | motion loss weight |
+| `--gate-floor` | `0.05` | gate floor |
+| `--lr` | `0.0001` | lr |
+| `--positive-fraction` | `0.5` | positive fraction |
+| `--workers` | `4` | Parallel image loaders; use 0 for serial loading |
+| `--device` | `auto` | device |
+| `--seed` | `2026` | seed |
+| `--max-train-samples` | `0` | max train samples |
+| `--max-val-samples` | `0` | max val samples |
+| `--resume` | `None` | resume |
+| `--infer-source` | `None` | Run full-folder heatmap inference after final epoch succeeds |
+| `--inference-max-frames` | `0` | Limited inference only for preflight |
+| `--heatmap-max` | `0.02` | heatmap max |
+| `--no-tensorboard` | `False` | Disable TensorBoard event logging |
+
 ## ASTT 訓練 CLI
 
 | 參數 | 預設值 | 用途／限制 |
 |---|---|---|
-| `--data-dir` | `<Boom>\data` | Root containing astt/ |
-| `--output-dir` | `<Boom>\output` | output dir |
+| `--data-dir` | `<Boom>\benchmark\ASTT\data` | Root containing astt/ |
+| `--output-dir` | `<Boom>\benchmark\ASTT\output` | output dir |
 | `--experiment-name` | `20261001_201320_522097` | experiment name |
 | `--device` | `auto` | device；可選 auto, cpu, cuda |
 | `--batch-size` | `8` | batch size |
@@ -316,8 +360,8 @@ ui:
 
 | 參數 | 預設值 | 用途／限制 |
 |---|---|---|
-| `--data-dir` | `<Boom>\data` | Root containing astt/ |
-| `--output-dir` | `<Boom>\output` | output dir |
+| `--data-dir` | `<Boom>\benchmark\ASTT\data` | Root containing astt/ |
+| `--output-dir` | `<Boom>\benchmark\ASTT\output` | output dir |
 | `--experiment-name` | `20261001_201320_523098` | experiment name |
 | `--device` | `auto` | device；可選 auto, cpu, cuda |
 | `--batch-size` | `8` | batch size |
@@ -393,6 +437,6 @@ model.train(data=str(DATA_YAML), epochs=100, imgsz=IMAGE_SIZE, batch=-1, device=
 | --fps | 10 | 抽幀 FPS，不得高於來源 FPS。 |
 | --name | 影片 stem | 片段資料夾名稱，已存在則拒絕覆寫。 |
 | --split | train | train、val 或 test。 |
-| --data-dir | <Boom>/data | 根目錄，會附加 astt/<split>。 |
+| --data-dir | <Boom>/benchmark/ASTT/data | 根目錄，會附加 astt/<split>。 |
 
 模型設定由 checkpoint 載入時，以權重內 model_config 為準；registration 必須與訓練一致。resume 要保持原總 epochs、每 epoch steps 和選模方式。threshold/min-area 等只影響候選區域，不是煙霧分類信心。更多格式和限制見 [ASTT 本機說明](../benchmark/ASTT/doc/README_LOCAL.md)。

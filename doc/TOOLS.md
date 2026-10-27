@@ -1,6 +1,27 @@
-# Boom 資料準備與模型訓練工具
+# 資料準備、訓練與相機工具
 
-`tools/` 包含 Boom 專案的資料準備、資料集切分與 YOLO 訓練工具。ASTT 的影片標記工具位於 `benchmark/ASTT/tools/`。
+所有命令從 Boom 專案根目錄執行。Boom 的辨識執行與 ST² 的模型訓練分開，設定與完整參數見 [執行設定](RUN_SETTINGS.md)。
+
+## ST² 訓練與資料準備
+
+ST²入口已全部移入`src/st2/cli/`，`tools/`只保留其他專案工具。平常使用統一入口：
+
+| 命令 | 功能 |
+|---|---|
+| `python src/st2 prepare` | 逐幀框標註、來源分組與版本化匯出 |
+| `python src/st2 train` | 訓練、驗證、續訓與完成後自動推論 |
+| `python src/st2 infer` | checkpoint影片熱圖與逐幀分數 |
+| `python src/st2 export-tensorboard` | 既有metrics轉獨立TensorBoard事件 |
+
+```powershell
+conda activate boom
+python src/st2 prepare
+python src/st2 train --epochs 30 --device cuda
+```
+
+訓練資料預設 `data/st2/prepared/st2_v1/`，標註保存於 `output/st2/annotations/`，新訓練結果位於 `output/st2/training/`。舊 Smoke Heatmap 工具入口已刪除；請使用上表的新命令。
+
+框標註與略過規則見 [ST² 資料集](ST2_DATASET.md)，架構、續訓與推論見 [ST² 模型與操作](ST2.md)。
 
 ## ASTT：標記異常時間區段、自動分組與 .npy
 
@@ -9,7 +30,7 @@ conda activate boom
 python benchmark/ASTT/tools/prepare_dataset.py
 ```
 
-加入影片或連續影格 → S 起點、E 終點標記異常 → 每支按完成 → 預覽分組 → 產生資料集。標記畫面與匯出固定 30 FPS，高幀率取樣、低幀率重複影格；圖片資料夾須已是 30 FPS 序列。未標記影格依此工具規則視為正常，至少兩個獨立來源群組，依 7:3 分 train／val。預設建立 `data/astt/prepared/artillery-shell_v1/`，不覆寫原始資料或先前版本；訓練只使用五幀皆正常的窗口。訓練結束會輸出 val 效果，另行查看使用 `test.py --split val`。
+加入影片或連續影格 → S 起點、E 終點標記異常 → 每支按完成 → 預覽分組 → 產生資料集。標記畫面與匯出固定 30 FPS，高幀率取樣、低幀率重複影格；圖片資料夾須已是 30 FPS 序列。未標記影格依此工具規則視為正常，至少兩個獨立來源群組，依 7:3 分 train／val。預設建立 `benchmark/ASTT/data/prepared/artillery-shell_v1/`，不覆寫原始資料或先前版本；訓練只使用五幀皆正常的窗口。訓練結束會輸出 val 效果，另行查看使用 `test.py --split val`。
 
 完整操作及訓練／測試指令見 [ASTT 資料準備](../benchmark/ASTT/doc/DATASET_PREPARATION.md)。
 

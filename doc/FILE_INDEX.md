@@ -8,6 +8,49 @@ Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統，目
 
 | 檔案 | 功能 |
 |---|---|
+| [train_st2.py](../train_st2.py) | 根目錄ST²訓練＋best.pt自動影片推論入口，支援續訓與來源覆寫。 |
+| [src/st2/__main__.py](../src/st2/__main__.py) | ST² st2：__main__。 |
+| [src/st2/cli/__init__.py](../src/st2/cli/__init__.py) | ST² cli：__init__。 |
+| [src/st2/common/__init__.py](../src/st2/common/__init__.py) | ST² common：__init__。 |
+| [src/st2/data/__init__.py](../src/st2/data/__init__.py) | ST² data：__init__。 |
+| [src/st2/engine/__init__.py](../src/st2/engine/__init__.py) | ST² engine：__init__。 |
+| [src/st2/models/__init__.py](../src/st2/models/__init__.py) | ST² models：__init__。 |
+| [src/st2/__init__.py](../src/st2/__init__.py) | ST² 獨立套件入口，不預先載入模型。 |
+| [src/st2/models/network.py](../src/st2/models/network.py) | ST2Config、ST2Model、ST2Criterion 與主要 loss。 |
+| [src/st2/models/motion.py](../src/st2/models/motion.py) | 背景配準 loss、幾何運算與連續相機增強。 |
+| [src/st2/data/sequence.py](../src/st2/data/sequence.py) | 來源分組、連續窗口與資料 fingerprint。 |
+| [src/st2/data/dataset.py](../src/st2/data/dataset.py) | ST2Dataset：8幀歷史、當前影格與9幀ROI遮罩。 |
+| [src/st2/data/annotations.py](../src/st2/data/annotations.py) | 逐幀標註、來源分組及安全的版本匯出。 |
+| [src/st2/data/editor.py](../src/st2/data/editor.py) | ST² 影片區段與逐幀框標註介面。 |
+| [src/st2/cli/prepare.py](../src/st2/cli/prepare.py) | 標註、分組預覽與匯出命令列實作。 |
+| [src/st2/engine/postprocess.py](../src/st2/engine/postprocess.py) | 固定分數換算與可選相機運動檢查。 |
+| [src/st2/engine/view.py](../src/st2/engine/view.py) | ST² 熱圖影片與分數曲線顯示。 |
+| [src/st2/common/utils.py](../src/st2/common/utils.py) | 前處理、checkpoint、JSON與抽樣工具。 |
+| [src/st2/engine/tensorboard.py](../src/st2/engine/tensorboard.py) | 既有訓練數值轉TensorBoard，不改來源。 |
+| [src/st2/README.md](../src/st2/README.md) | 獨立套件分工與快速入口。 |
+| [README.md](../README.md) | 專案根目錄的閱讀入口。 |
+| [doc/history/README.md](history/README.md) | 歷史方法及整理快照索引。 |
+| [doc/research/README.md](research/README.md) | 論文研究快照索引。 |
+| [doc/MODEL_CHANGELOG.md](MODEL_CHANGELOG.md) | MODEL_CHANGELOG |
+| [doc/MODEL_EVOLUTION.md](MODEL_EVOLUTION.md) | MODEL_EVOLUTION |
+| [doc/history/ASTT_BBOX_INFERENCE.md](history/ASTT_BBOX_INFERENCE.md) | 歷史文件：ASTT_BBOX_INFERENCE |
+| [doc/history/ASTT_BBOX_TRAINING.md](history/ASTT_BBOX_TRAINING.md) | 歷史文件：ASTT_BBOX_TRAINING |
+| [doc/history/BBOX_TEMPORAL_MODEL.md](history/BBOX_TEMPORAL_MODEL.md) | 歷史文件：BBOX_TEMPORAL_MODEL |
+| [doc/history/FILE_USAGE_AUDIT.md](history/FILE_USAGE_AUDIT.md) | 歷史文件：FILE_USAGE_AUDIT |
+| [doc/history/SMOKE_HEATMAP_TRANSFORMER.md](history/SMOKE_HEATMAP_TRANSFORMER.md) | 歷史文件：SMOKE_HEATMAP_TRANSFORMER |
+| [doc/research/PAPER_REVIEW_20261026.md](research/PAPER_REVIEW_20261026.md) | 研究快照：PAPER_REVIEW_20261026 |
+| [doc/research/TRANSFORMER_PAPERS_20261026.md](research/TRANSFORMER_PAPERS_20261026.md) | 研究快照：TRANSFORMER_PAPERS_20261026 |
+| [src/st2/engine/train.py](../src/st2/engine/train.py) | 獨立ST²訓練與續訓。 |
+| [src/st2/engine/infer.py](../src/st2/engine/infer.py) | ST²影片推論與結果。 |
+| [src/st2/engine/runtime.py](../src/st2/engine/runtime.py) | 供執行環境替換模型的純逐幀推論介面。 |
+| [doc/ST2_DATASET.md](ST2_DATASET.md) | ST²標註與匯出格式。 |
+| [doc/history/ST2_MIGRATION.md](history/ST2_MIGRATION.md) | ST²與Boom分離及搬移紀錄。 |
+| [src/st2/cli/train.py](../src/st2/cli/train.py) | ST²訓練入口。 |
+| [src/st2/cli/infer.py](../src/st2/cli/infer.py) | ST²影片推論入口。 |
+| [src/st2/cli/prepare.py](../src/st2/cli/prepare.py) | ST²資料標註與匯出入口。 |
+| [src/st2/cli/export_tensorboard.py](../src/st2/cli/export_tensorboard.py) | 訓練紀錄轉TensorBoard。 |
+| [doc/ST2.md](ST2.md) | ST² v1.0 正式名稱、三分支架構、訓練／推論與驗證紀錄。 |
+| [src/st2/models/transformer.py](../src/st2/models/transformer.py) | ST² 純 Transformer 主實作：正常預測、背景運動及目標關注。 |
 | [.gitignore](../.gitignore) | 版本控制／目錄保留設定。 |
 | [AGENTS.md](../AGENTS.md) | 專案目標、功能優先順序與修改／驗證原則。 |
 | [benchmark/ASTT/origin/](../benchmark/ASTT/origin) | 官方原始碼完整快照，禁止修改；來源與校驗见 ASTT/doc/ORIGIN.md。 |
@@ -26,7 +69,6 @@ Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統，目
 | [benchmark/ASTT/src/config.py](../benchmark/ASTT/src/config.py) | 正式 CLI、模型參數與 data/output 預設路徑。 |
 | [benchmark/ASTT/src/model.py](../benchmark/ASTT/src/model.py) | 完整 STE／TTE／CSA 與下一幀預測模型。 |
 | [benchmark/ASTT/src/candidates.py](../benchmark/ASTT/src/candidates.py) | 誤差候選框與事件合併，非地理定位。 |
-| [benchmark/ASTT/src/__init__.py](../benchmark/ASTT/src/__init__.py) | ASTT 資料讀取與執行流程套件。 |
 | [benchmark/ASTT/src/annotations.py](../benchmark/ASTT/src/annotations.py) | 標記專案、來源群組切分與安全資料版本匯出。 |
 | [benchmark/ASTT/src/dataset.py](../benchmark/ASTT/src/dataset.py) | 連續影格窗口、標籤與缺幀檢查、可選 ECC 配準。 |
 | [benchmark/ASTT/src/runner.py](../benchmark/ASTT/src/runner.py) | 正式訓練、驗證、推論、checkpoint 與結果保存。 |
@@ -47,14 +89,14 @@ Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統，目
 | [configs/README.md](../configs/README.md) | 分類 YAML 用途、覆寫順序與地圖匹配設定。 |
 | [configs/system.yaml](../configs/system.yaml) | 執行設定；用途與合併順序見 configs/README.md。 |
 | [configs/ui.yaml](../configs/ui.yaml) | 執行設定；用途與合併順序見 configs/README.md。 |
-| [doc/ACCELERATION.md](../doc/ACCELERATION.md) | YOLO／Motion 執行效能、GPU 與顯示加速。 |
-| [doc/ASSET_UI.md](../doc/ASSET_UI.md) | 地圖與 UI 圖示資源的來源與用途。 |
-| [doc/FILE_INDEX.md](../doc/FILE_INDEX.md) | 專案逐檔用途與資源目錄索引。 |
-| [doc/MAP_LOCALIZATION.md](../doc/MAP_LOCALIZATION.md) | GeoTIFF 地圖、特徵匹配、參考照片與地面定位。 |
-| [doc/ONLINE.md](../doc/ONLINE.md) | 即時 Spinnaker 相機、偵測、輸出與設備設定。 |
-| [doc/PROJECT_STRUCTURE.md](../doc/PROJECT_STRUCTURE.md) | 專案架構、偵測流程與離線／即時執行範例。 |
-| [doc/README.md](../doc/README.md) | 文件入口與比較專案的 Git 追蹤規則。 |
-| [doc/RUN_SETTINGS.md](../doc/RUN_SETTINGS.md) | 執行入口、目前 YAML 值與 CLI 完整參數表。 |
+| [doc/ACCELERATION.md](ACCELERATION.md) | YOLO／Motion 執行效能、GPU 與顯示加速。 |
+| [doc/ASSET_UI.md](ASSET_UI.md) | 地圖與 UI 圖示資源的來源與用途。 |
+| [doc/FILE_INDEX.md](FILE_INDEX.md) | 專案逐檔用途與資源目錄索引。 |
+| [doc/MAP_LOCALIZATION.md](MAP_LOCALIZATION.md) | GeoTIFF 地圖、特徵匹配、參考照片與地面定位。 |
+| [doc/ONLINE.md](ONLINE.md) | 即時 Spinnaker 相機、偵測、輸出與設備設定。 |
+| [doc/PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | 專案架構、偵測流程與離線／即時執行範例。 |
+| [doc/README.md](README.md) | 文件入口與比較專案的 Git 追蹤規則。 |
+| [doc/RUN_SETTINGS.md](RUN_SETTINGS.md) | 執行入口、目前 YAML 值與 CLI 完整參數表。 |
 | [doc/TOOLS.md](TOOLS.md) | 抽幀、ASTT 標記、YOLO 資料切分、訓練與 ONNX 匯出指令。 |
 | [pyproject.toml](../pyproject.toml) | Boom 套件、Python 版本、基礎／ML／ONNX／地圖依賴與安裝設定。 |
 | [run_offline.py](../run_offline.py) | 離線影片入口：選擇 motion 或 YOLO，執行偵測、顯示、保存與可選定位。 |
@@ -135,7 +177,7 @@ Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統，目
 | 目錄 | 功能 |
 |---|---|
 | data/picture | 使用者影格與標註；不自動改寫或視為正常資料。 |
-| data/astt | ASTT 的 train、val、test 影格與逐幀標籤。 |
+| benchmark/ASTT/data/astt | ASTT 的 train、val、test 影格與逐幀標籤。 |
 | data/yolo_datasets | YOLO 原始／版本化訓練資料。 |
 | data/video、data/raw_video | 影片輸入。 |
 | models | 預訓練權重、checkpoint 與 ONNX，不提交大型模型。 |
@@ -145,3 +187,11 @@ Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統，目
 | X-AnyLabeling、cvat | 外部標註軟體；不修改、不加入 Boom Git。 |
 
 更新索引：`python tools/update_file_index.py`（使用 boom 環境）。
+
+
+## Smoke Heatmap 模型與工具
+
+| 檔案 | 功能 |
+|---|---|
+| [doc/history/SMOKE_HEATMAP.md](history/SMOKE_HEATMAP.md) | 歷史：已移除的 Smoke Heatmap 方法與指令。 |
+| [doc/history/SMOKE_HEATMAP_DATASET.md](history/SMOKE_HEATMAP_DATASET.md) | 時間區段與手動逐幀 BBox 標註 UI、資料格式及匯出操作。 |

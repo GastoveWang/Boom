@@ -16,6 +16,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+st2 = [
+    "torch",
+    "scipy",
+    "tqdm",
+    "tensorboard",
+]
 ml = [
     "torch",
     "torchvision",

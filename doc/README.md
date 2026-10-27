@@ -1,18 +1,42 @@
-# Boom 文件
+# Boom 文件導覽
 
-- [專案結構與執行](PROJECT_STRUCTURE.md)
-- [逐檔功能索引](FILE_INDEX.md)
-- [執行入口與完整設定](RUN_SETTINGS.md)
-- [ASTT 快速使用與檔案分類](../benchmark/ASTT/doc/START_HERE.md)
-- [ASTT 影片時間區段標記與資料準備](../benchmark/ASTT/doc/DATASET_PREPARATION.md)
-- [即時相機流程](ONLINE.md)
+更新日期：2026-10-27。本文是目前操作的入口；歷史方法與文獻快照另行分類。
+
+## 先看哪一份
+
+| 想做的事 | 文件 |
+|---|---|
+| 了解目錄與 Boom／ST² 的分工 | [專案結構](PROJECT_STRUCTURE.md) |
+| 訓練、續訓或推論 ST² | [ST² 模型與操作](ST2.md) |
+| 標註影片與產生 ST² 資料集 | [ST² 資料集](ST2_DATASET.md) |
+| 執行離線影片與即時相機辨識 | [執行設定](RUN_SETTINGS.md)、[即時相機](ONLINE.md) |
+| 找檔案負責什麼 | [逐檔功能索引](FILE_INDEX.md) |
+
+目前 Boom 提供 motion／YOLO 偵測器；ST² 提供獨立模型與逐幀熱圖介面，尚未接入即時煙霧事件確認。舊 Smoke Heatmap 入口與 baseline／camera-aware 研究程式已移除，既有資料、權重與輸出保留。
+
+## Boom 執行與工具
+
+- [執行入口、YAML 與 CLI 參數](RUN_SETTINGS.md)
+- [即時相機與顯示流程](ONLINE.md)
 - [YOLO 與 Motion 加速](ACCELERATION.md)
-- [地圖與定位](MAP_LOCALIZATION.md)
-- [資料準備與模型訓練工具](TOOLS.md)
+- [地圖與座標定位](MAP_LOCALIZATION.md)
+- [資料準備、相機檢查與訓練工具](TOOLS.md)
 - [地圖 UI 資料來源](ASSET_UI.md)
 
-## 碩論比較專案
+## ST² 模型與紀錄
 
-新的獨立專案可放在根目錄的 `benchmark/<專案名稱>/`，保留各專案原本的目錄、授權和文件。除 `benchmark/ASTT/` 已納入 Boom Git 外，其他比較專案預設不追蹤。ASTT 使用一般原始碼目錄，不是巢狀 Git 或 submodule；ASTT 按 Boom 分工整理為 scripts、src、tools 與 doc；官方未修改原始碼保存在 origin/，上游資訊見 origin/README.md。Boom 的偵測程式和輸出仍分別放在 `src/boom/` 與 `output/`。
+- [ST² 架構、訓練、續訓、推論與限制](ST2.md)
+- [ST² 逐幀框標註、資料格式與匯出](ST2_DATASET.md)
+- [目前架構與 ASTT 的差異及歷史演進](MODEL_EVOLUTION.md)
+- [完整模型與推論變更紀錄](MODEL_CHANGELOG.md)
 
-現有的 `X-AnyLabeling/` 保留在根目錄，不移動。
+`MODEL_CHANGELOG.md` 依時間保留紀錄；其中舊路徑與指令是當時的狀態，不是目前入口。
+
+## 比較模型、研究與歷史
+
+- [ASTT 快速使用](../benchmark/ASTT/doc/START_HERE.md)
+- [ASTT 資料準備](../benchmark/ASTT/doc/DATASET_PREPARATION.md)
+- [論文研究索引](research/README.md)
+- [歷史方法、搬移與盤點紀錄](history/README.md)
+
+`benchmark/ASTT/` 保留比較模型，`origin/` 是官方快照；其維護與操作規則見該專案文件。歷史輸出不因文件分類而搬移或改寫。
