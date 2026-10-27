@@ -24,6 +24,8 @@ ASTT/
 │   ├── prepare_dataset.py  # 影片標記 GUI、分組預覽與資料匯出入口
 │   ├── extract_frames.py   # 影片抽幀與來源幀號／時間 manifest
 │   └── verify_origin.py    # 驗證官方快照的檔案清單與 SHA-256
+├── data/                   # ASTT 資料集，忽略於 Git
+├── output/                 # 分層的訓練及結果，忽略於 Git
 ├── doc/                    # 方法、資料格式、操作說明、來源紀錄
 ├── requirements.txt
 ├── README.md               # 專案簡介與文件入口
@@ -36,26 +38,25 @@ ASTT/
 
 ## 資料與輸出位置
 
-所有資料與結果存放在 Boom 根目錄，`benchmark/ASTT/` 只放程式與文件：
+ASTT 資料與輸出已回到 `benchmark/ASTT/`，保留訓練、最後結果及人工標記的分層：
 
 ```text
-Boom/
-├── data/astt/
-│   ├── prepared/<名稱>_vN/     # 匯出資料集版本
-│   │   ├── astt/train/        # 訓練影格與標籤
-│   │   ├── astt/val/          # 驗證影格與標籤
-│   │   └── README.md、annotations.json、split_report.json
-│   └── train/、val/、test/    # 手動準備資料時的預設位置
+benchmark/ASTT/
+├── data/
+│   ├── prepared/<名稱>_vN/     # 匯出版本，其下 astt/train、astt/val
+│   └── astt/train、val、test/ # 手動資料的預設位置
 └── output/astt/
-    ├── training/<實驗名稱>/   # 權重、history、progress 與訓練後 validation
-    ├── results/<實驗名稱>/    # 資料集評估或新影片的最後結果
-    ├── annotations/          # 人工標記專案 JSON
-    └── cache/                # 搬移前既有快取，保留原內容
+    ├── training/<實驗名稱>/  # 權重、history、progress 與訓練後 validation
+    ├── results/<實驗名稱>/   # 資料集評估或影片推論的最後結果
+    ├── annotations/         # 人工標記專案 JSON
+    └── cache/               # 保留的既有快取
 ```
 
-訓練時使用 `--data-dir data/astt/prepared/<名稱>_vN`，其下仍包含 `astt/`，維持既有資料讀取格式。手動資料不指定參數時讀取 `Boom/data/astt/<split>/`。`--output-dir` 表示共用輸出根目錄，預設為 `Boom/output`；程式自動依入口附加 `astt/training` 或 `astt/results`。同名實驗已存在時拒絕覆寫。
+所有下列指令從 Boom 根目錄執行。訓練版本使用 `--data-dir benchmark/ASTT/data/prepared/<名稱>_vN`，其下仍包含 `astt/`。手動資料不指定參數時讀取 `benchmark/ASTT/data/astt/<split>/`。
 
-既有資料、權重與結果已搬到上述位置；原有 README、config.json 與 split_report.json 保留歷史路徑紀錄。搬移對照記錄在 `output/astt/path_migration_20261013.json`，既有資料集的新指令放在 `data/astt/prepared/artillery-shell_v1/README_CURRENT_PATHS.md`。新匯出的資料集 README 會直接使用新路徑。
+`--output-dir` 預設為 `benchmark/ASTT/output`；程式繼續附加 `astt/training` 或 `astt/results`。自訂 output-dir 的行為不變，同名實驗已存在時拒絕覆寫。
+
+搬回前後已比對完整的檔名、檔案數、大小及修改時間，未重寫既有資料、checkpoint 或歷史結果。先前的 `path_migration_20261013.json` 保留歷史紀錄；這次對照另存於 `output/astt/path_return_*.json`。歷史 README/config/split_report 仍可能記錄以前位置，最新使用路徑見本頁及資料集內新增的 `README_RETURNED_PATHS_*.md`。
 
 ## 原始碼與本機版
 

@@ -6,17 +6,17 @@
 
 ```bat
 conda activate boom
-python benchmark/ASTT/scripts/inference.py --video "C:\videos\new_video.mp4" --checkpoint output/astt/training/astt_artillery_shell_v1_001/checkpoints/best.pth --device cuda
+python benchmark/ASTT/scripts/inference.py --video "C:\videos\new_video.mp4" --checkpoint benchmark/ASTT/output/astt/training/astt_artillery_shell_v1_001/checkpoints/best.pth --device cuda
 ```
 
-預設會建立新的 `output/astt/results/video_<時間>/`。模型尺寸與歷史幀數從 checkpoint 讀取。預設 batch size 8，影片與標記匯出共用固定 30 FPS 時間軸：高幀率取樣、低幀率重複原始影格，無需手動設定 FPS。影片來源不會被修改，不會保存抽出的原始圖片。
+預設會建立新的 `benchmark/ASTT/output/astt/results/video_<時間>/`。模型尺寸與歷史幀數從 checkpoint 讀取。預設 batch size 8，影片與標記匯出共用固定 30 FPS 時間軸：高幀率取樣、低幀率重複原始影格，無需手動設定 FPS。影片來源不會被修改，不會保存抽出的原始圖片。
 
 加入 `--display` 可在處理期間預覽；按 Q 或 Esc 提前結束，保留已處理部分。預覽以實際推論速度更新，輸出的影片仍為 30 FPS。若只想先確認能跑，加 `--max-frames 300`，只處理轉換後前十秒。`--experiment-name new_video_001` 可指定名稱，已存在的輸出目錄會拒絕覆寫。正式跑完整影片不需 `--max-frames`。
 
 例如：
 
 ```bat
-python benchmark/ASTT/scripts/inference.py --video "C:\videos\new_video.mp4" --checkpoint output/astt/training/astt_artillery_shell_v1_001/checkpoints/best.pth --device cuda --display --experiment-name new_video_001
+python benchmark/ASTT/scripts/inference.py --video "C:\videos\new_video.mp4" --checkpoint benchmark/ASTT/output/astt/training/astt_artillery_shell_v1_001/checkpoints/best.pth --device cuda --display --experiment-name new_video_001
 ```
 
 ## 輸出

@@ -27,6 +27,7 @@
 
 - [ST² 架構、訓練、續訓、推論與限制](ST2.md)
 - [ST² 逐幀框標註、資料格式與匯出](ST2_DATASET.md)
+- [ST² torchview 模型視覺化](ST2_VISUALIZATION.md)
 - [目前架構與 ASTT 的差異及歷史演進](MODEL_EVOLUTION.md)
 - [完整模型與推論變更紀錄](MODEL_CHANGELOG.md)
 

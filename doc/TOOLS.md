@@ -12,6 +12,7 @@ ST²入口已全部移入`src/st2/cli/`，`tools/`只保留其他專案工具。
 | `python src/st2 train` | 訓練、驗證、續訓與完成後自動推論 |
 | `python src/st2 infer` | checkpoint影片熱圖與逐幀分數 |
 | `python src/st2 export-tensorboard` | 既有metrics轉獨立TensorBoard事件 |
+| `python src/st2 visualize` | torchview完整模型與三分支運算圖，SVG／DOT匯出 |
 
 ```powershell
 conda activate boom
@@ -19,7 +20,7 @@ python src/st2 prepare
 python src/st2 train --epochs 30 --device cuda
 ```
 
-訓練資料預設 `data/st2/prepared/st2_v1/`，標註保存於 `output/st2/annotations/`，新訓練結果位於 `output/st2/training/`。舊 Smoke Heatmap 工具入口已刪除；請使用上表的新命令。
+訓練資料預設 `data/st2/st2_v1/`，標註保存於 `output/st2/annotations/`，新訓練結果位於 `output/st2/training/`。舊 Smoke Heatmap 工具入口已刪除；請使用上表的新命令。
 
 框標註與略過規則見 [ST² 資料集](ST2_DATASET.md)，架構、續訓與推論見 [ST² 模型與操作](ST2.md)。
 

@@ -1,6 +1,6 @@
 """Train ST2, then infer with best.pt; run directly from the project root.
 
-Defaults: data/st2/prepared/st2_v1, 30 epochs, automatic CPU/CUDA selection,
+Defaults: data/st2/st2_v1, 30 epochs, automatic CPU/CUDA selection,
 then inference on data/video/1440-1080/0603. Override with normal ST2 options.
 """
 from pathlib import Path

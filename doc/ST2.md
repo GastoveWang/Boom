@@ -49,7 +49,7 @@ conda activate boom
 python train_st2.py
 ```
 
-根目錄入口直接呼叫現有ST²引擎，預設資料`data/st2/prepared/st2_v1`、30輪、batch4、768×576、device=auto。訓練與驗證成功、權重保存完成後，載入best.pt對`data/video/1440-1080/0603`內影片推論。輸出仍在`output/st2/training/st2_<時間>_<ID>/`，自動推論放在同一run的inference子目錄。
+根目錄入口直接呼叫現有ST²引擎，預設資料`data/st2/st2_v1`、30輪、batch4、768×576、device=auto。訓練與驗證成功、權重保存完成後，載入best.pt對`data/video/1440-1080/0603`內影片推論。輸出仍在`output/st2/training/st2_<時間>_<ID>/`，自動推論放在同一run的inference子目錄。
 
 ```powershell
 # 更換推論來源
@@ -68,7 +68,7 @@ ST² 架構仍需重新訓練，不能把 v2.0/v2.2 的權重直接當作 ST²�
 
 目前主程式位於 `src/st2/`，不依賴 `boom`。新 checkpoint 使用 `st2.checkpoint.v1`，架構標記為 `st2.v1.0`；訓練／推論摘要保存 `model_name=ST2` 與完整名稱。載入器接受新容器，以及舊容器中variant明確為transformer的同架構ST²權重；state_dict鍵不變。baseline/camera-aware及缺少variant的歷史模型會明確拒絕，不再提供其網路程式。
 
-新入口 `src/st2/cli/train.py` 預設 `variant=transformer`，資料為 `data/st2/prepared/st2_v1`，輸出至 `output/st2/training/st2_<時間>_<ID>/`。標註新匯出名預設 st2，新標註 schema 為 `st2.annotations.v1`，仍支援舊 boom.astt_bbox.v1/v2/v3。歷史 JSON 與權重不改寫。
+新入口 `src/st2/cli/train.py` 預設 `variant=transformer`，資料為 `data/st2/st2_v1`，輸出至 `output/st2/training/st2_<時間>_<ID>/`。標註新匯出名預設 st2，新標註 schema 為 `st2.annotations.v1`，仍支援舊 boom.astt_bbox.v1/v2/v3。歷史 JSON 與權重不改寫。
 
 支援 `--patch-size`、`--transformer-layers`、`--window-size`；訓練尺寸需同時符合資料載入器的8倍數及patch整除。續訓恢復來源架構設定，推論尺寸由checkpoint取得。舊tools、boom.smoke_heatmap轉接與舊路徑自動映射已移除，只使用現行ST²入口與實際路徑。模型／loss類別為ST2Config、ST2Model、ST2Criterion；資料集為ST2Dataset／ST2SequenceDataset。
 
@@ -107,6 +107,8 @@ Boom 的 `BaseSmokeDetector` 負責顯示與事件契約，ST²Runtime 是純模
 資料與歷史目錄對照及後續清理見 [ST2_MIGRATION.md](history/ST2_MIGRATION.md)，標註操作見 [ST2_DATASET.md](ST2_DATASET.md)。舊歷史輸出中的原模型名稱不代表已用ST²重訓。
 
 ## 套件目錄與命令入口
+
+模型運算圖可使用 `python src/st2 visualize` 匯出，支援完整模型與三條分支；現成圖與說明見 [ST2_VISUALIZATION.md](ST2_VISUALIZATION.md)。
 
 ST²入口已收進 `src/st2/cli/`，不再使用tools中的ST²腳本；平常從專案根目錄執行 `python src/st2 train`、`infer`、`prepare` 或 `export-tensorboard`。各命令可加`--help`。
 

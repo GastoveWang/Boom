@@ -1,6 +1,6 @@
 # 執行入口與完整設定
 
-> 2026-10-27 更新：ST²統一入口為`python src/st2 train`／`infer`／`prepare`／`export-tensorboard`；實作與CLI均收在src/st2。資料為data/st2/prepared/st2_v1、輸出output/st2，完整設定見 [ST2.md](ST2.md)。Boom名稱及motion／YOLO設定不變。
+> 2026-10-27 更新：ST²統一入口為`python src/st2 train`／`infer`／`prepare`／`export-tensorboard`；實作與CLI均收在src/st2。資料為data/st2/st2_v1、輸出output/st2，完整設定見 [ST2.md](ST2.md)。Boom名稱及motion／YOLO設定不變。
 
 從 Boom 根目錄執行。以下 CLI 表由目前 argparse 定義（ASTT 位於 benchmark/ASTT/src/config.py）產生；絕對路徑以 `<Boom>` 表示專案根。ASTT 的資料／輸出根會再附加 astt/；修改 configs/*.yaml 不會改 ASTT 設定。
 
@@ -29,7 +29,7 @@ python benchmark/ASTT/scripts/test.py --split val --checkpoint benchmark/ASTT/ou
 
 ST² 使用 `src/st2/cli/train.py` 訓練／續訓、`src/st2/cli/infer.py` 推論，主體位於 `src/st2/`。設定由 CLI 與 checkpoint 決定，不由既有 Boom YAML 控制，詳見 [模型與操作](ST2.md)。舊 Smoke Heatmap 工具已移除，只使用現行ST²入口。
 
-ST²標註 UI 使用 `src/st2/cli/prepare.py`，新標註及版本資料分別位於 `output/st2/annotations/`、`data/st2/prepared/`。既有 astt_bbox 資料已更名為 `data/st2/prepared/st2_v1`；參數及操作見 [標註工具](ST2_DATASET.md)，與原版 ASTT 的入口及設定分開。
+ST²標註 UI 使用 `src/st2/cli/prepare.py`，新標註及版本資料分別位於 `output/st2/annotations/`、`data/st2/`。既有 astt_bbox 資料已更名為 `data/st2/st2_v1`；參數及操作見 [標註工具](ST2_DATASET.md)，與原版 ASTT 的入口及設定分開。
 
 讀取順序與作用見 [configs/README.md](../configs/README.md)。CLI 值可覆蓋對應設定；非所有 YAML 值都由每個 runner 使用，請以 CLI 和 loader 實作為準。保留目前使用者設定，這裡只列出內容。
 
@@ -294,7 +294,7 @@ ui:
 
 | 參數 | 預設值 | 用途／限制 |
 |---|---|---|
-| `--data` | `<Boom>\data\st2\prepared\st2_v1` | data |
+| `--data` | `<Boom>\data\st2\st2_v1` | data |
 | `--output` | `<Boom>\output\st2\training` | output |
 | `--epochs` | `30` | epochs |
 | `--history-frames` | `8` | Past inputs; current scoring frame is separate |

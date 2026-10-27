@@ -131,3 +131,7 @@ ST²保留下一幀預測的研究思路，但不是ASTT完整架構。操作見
 此次只整理檔案、匯入與命令入口，不改相對ASTT的架構差異、模型計算或監督方式。同權重輸出逐值一致；資料、權重與歷史輸出不改動，Boom原本執行功能保持原樣。現行結構見 [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)。
 
 同日新增根目錄`train_st2.py`，預設訓練成功後以best.pt推論0603影片資料夾；模型架構與訓練參數不變。此為一鍵流程入口，套件內`python src/st2 train`仍維持可選推論。詳見 [ST2.md](ST2.md)。
+
+同日新增`python src/st2 visualize`，以torchview匯出目前模型與三分支的真實forward圖。此功能只追蹤既有模型，不改相對ASTT的架構或訓練方法；它不是反向圖或attention權重圖。圖片與操作見 [ST2_VISUALIZATION.md](ST2_VISUALIZATION.md)。
+
+同日依使用者要求移除資料路徑的prepared外層，現行資料為`data/st2/st2_v1/`，標註新匯出也直接放data/st2。資料內容及fingerprint不變，這是目錄整理，不改模型或監督方式；Git只保留零位元.gitkeep資料夾結構，不上傳資料集。

@@ -15,4 +15,4 @@ ASTT 是用連續影格預測下一幀的異常偵測方法；本機版用於驗
 - [官方原始碼與保護方式](doc/ORIGIN.md)：固定版本、來源和校驗指令。
 - [作者原始 README](origin/README.md)：論文、作者與引用，內容未修改。
 
-資料與輸出統一位於 Boom 根目錄。標記工具建立 `data/astt/prepared/<名稱>_vN/astt/`，使用版本目錄作為 `--data-dir`。訓練權重與紀錄放在 `output/astt/training/<experiment-name>/`；最後的資料集評估與影片推論結果放在 `output/astt/results/<experiment-name>/`；人工標記放在 `output/astt/annotations/`。詳見 [資料與輸出結構](doc/PROJECT_STRUCTURE.md#資料與輸出位置)。候選框代表高預測誤差區域，尚未接入 Boom 的即時相機與 GPS 定位。
+ASTT 資料與輸出位於 benchmark/ASTT 本機專案內。標記工具建立 `benchmark/ASTT/data/prepared/<名稱>_vN/astt/`，使用版本目錄作為 `--data-dir`。訓練權重與紀錄放在 `benchmark/ASTT/output/astt/training/<experiment-name>/`；最後的資料集評估與影片推論結果放在 `benchmark/ASTT/output/astt/results/<experiment-name>/`；人工標記放在 `benchmark/ASTT/output/astt/annotations/`。詳見 [資料與輸出結構](doc/PROJECT_STRUCTURE.md#資料與輸出位置)。候選框代表高預測誤差區域，尚未接入 Boom 的即時相機與 GPS 定位。

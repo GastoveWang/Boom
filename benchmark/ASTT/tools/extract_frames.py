@@ -1,6 +1,6 @@
 # 檔案功能：MP4 抽幀工具，保存來源幀號與時間對應表。
 # 所屬分工：tools：相當於 Boom 的資料準備工具。
-# 輸入／輸出：MP4 → data/astt/<split>/<video>/ 的 JPG 與 frames.csv。
+# 輸入／輸出：MP4 → benchmark/ASTT/data/astt/<split>/<video>/ 的 JPG 與 frames.csv。
 # 執行方式：從 Boom 根目錄執行 python benchmark/ASTT/tools/extract_frames.py --help。
 # 設定與說明：抽幀參數由本檔 main() 定義；格式見 doc/README_LOCAL.md。
 
@@ -13,6 +13,10 @@ import sys
 import cv2
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from benchmark.ASTT.src.config import DATA_ROOT
 
 
 def main():
@@ -21,7 +25,7 @@ def main():
     p.add_argument('--fps', type=float, default=10.)
     p.add_argument('--name', help='Output video folder name (defaults to MP4 stem)')
     p.add_argument('--split', choices=['train', 'val', 'test'], default='train')
-    p.add_argument('--data-dir', type=Path, default=PROJECT_ROOT/'data')
+    p.add_argument('--data-dir', type=Path, default=DATA_ROOT)
     args = p.parse_args()
     name = args.name or args.video.stem
     if not math.isfinite(args.fps) or args.fps <= 0 or Path(name).name != name or name in {'', '.', '..'}:

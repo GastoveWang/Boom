@@ -9,7 +9,7 @@ SRC_ROOT = Path(__file__).resolve().parents[2]
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from st2.data.annotations import PREPARED_ROOT, export_dataset, load_project, plan_split
+from st2.data.annotations import DATASET_ROOT, export_dataset, load_project, plan_split
 
 
 def main():
@@ -21,7 +21,7 @@ def main():
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument('--preview', action='store_true', help='預覽群組分配，不開 UI 或寫入輸出')
     modes.add_argument('--export', action='store_true', help='從已完成的標註專案匯出新版本')
-    parser.add_argument('--output-parent', type=Path, default=PREPARED_ROOT)
+    parser.add_argument('--output-parent', type=Path, default=DATASET_ROOT)
     parser.add_argument('--name', default='st2')
     parser.add_argument('--ratios', type=float, nargs=2, default=(7., 3.), metavar=('TRAIN', 'VAL'))
     parser.add_argument('--history-frames', type=int, default=4)

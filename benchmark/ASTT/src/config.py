@@ -4,9 +4,10 @@ from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DATA_ROOT = PROJECT_ROOT / 'data'
-OUTPUT_ROOT = PROJECT_ROOT / 'output'
-PREPARED_ROOT = DATA_ROOT / 'astt' / 'prepared'
+ASTT_ROOT = Path(__file__).resolve().parents[1]
+DATA_ROOT = ASTT_ROOT / 'data'
+OUTPUT_ROOT = ASTT_ROOT / 'output'
+PREPARED_ROOT = DATA_ROOT / 'prepared'
 ANNOTATIONS_ROOT = OUTPUT_ROOT / 'astt' / 'annotations'
 MODEL_KEYS = ('image_size', 'patch_size', 'emb_dim', 'mlp_dim', 'num_heads',
               'spatial_layers', 'temporal_layers', 'num_frames', 'dropout_rate')

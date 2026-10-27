@@ -8,6 +8,10 @@ Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統，目
 
 | 檔案 | 功能 |
 |---|---|
+| [data/st2/st2_v1/](../data/st2/st2_v1/) | 本機ST²資料集；Git僅保留零位元.gitkeep的資料夾結構。 |
+| [src/st2/engine/visualize.py](../src/st2/engine/visualize.py) | torchview計算圖追蹤、分支匯出與Graphviz尋找。 |
+| [src/st2/cli/visualize.py](../src/st2/cli/visualize.py) | ST² visualize命令與參數。 |
+| [doc/ST2_VISUALIZATION.md](ST2_VISUALIZATION.md) | torchview操作、實際SVG快照與限制。 |
 | [train_st2.py](../train_st2.py) | 根目錄ST²訓練＋best.pt自動影片推論入口，支援續訓與來源覆寫。 |
 | [src/st2/__main__.py](../src/st2/__main__.py) | ST² st2：__main__。 |
 | [src/st2/cli/__init__.py](../src/st2/cli/__init__.py) | ST² cli：__init__。 |

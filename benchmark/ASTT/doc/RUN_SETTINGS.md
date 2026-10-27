@@ -32,17 +32,17 @@ python benchmark/ASTT/tools/prepare_dataset.py --help
 ```powershell
 conda activate boom
 python benchmark/ASTT/scripts/train.py --experiment-name astt_full_001 --device cuda --batch-size 8 --epochs 30
-python benchmark/ASTT/scripts/test.py --split val --checkpoint output/astt/training/astt_full_001/checkpoints/best.pth --experiment-name astt_full_val_001 --device cuda --batch-size 8
+python benchmark/ASTT/scripts/test.py --split val --checkpoint benchmark/ASTT/output/astt/training/astt_full_001/checkpoints/best.pth --experiment-name astt_full_val_001 --device cuda --batch-size 8
 ```
 
-每次實驗使用新名稱。模型設定從 checkpoint 載入時以權重內容為準；registration 要與訓練一致。資料根預設為 Boom 的 `data/`，讀取其下 `astt/<split>/`；匯出資料集則以版本目錄作為 `--data-dir`。輸出根預設為 Boom 的 `output/`，訓練附加 `astt/training/<experiment-name>/`，最後評估與影片推論附加 `astt/results/<experiment-name>/`。
+每次實驗使用新名稱。模型設定從 checkpoint 載入時以權重內容為準；registration 要與訓練一致。資料根預設為 `benchmark/ASTT/data/`，讀取其下 `astt/<split>/`；匯出資料集則以版本目錄作為 `--data-dir`。輸出根預設為 `benchmark/ASTT/output/`，訓練附加 `astt/training/<experiment-name>/`，最後評估與影片推論附加 `astt/results/<experiment-name>/`。
 
 ## 先確認能否訓練
 
 短測試使用實際資料與目前完整模型，只取最多四個 train batch、兩個 val batch，跑一輪並保存／重新載入最佳權重。這是執行診斷，短測試的 AUC 不代表正式效果；原資料集不會被修改。
 
 ```powershell
-python benchmark/ASTT/scripts/train.py --data-dir data/astt/prepared/artillery-shell_v1 --output-dir output --experiment-name astt_preflight_001 --device cuda --batch-size 8 --epochs 1 --selection auc --preflight
+python benchmark/ASTT/scripts/train.py --data-dir benchmark/ASTT/data/prepared/artillery-shell_v1 --output-dir benchmark/ASTT/output --experiment-name astt_preflight_001 --device cuda --batch-size 8 --epochs 1 --selection auc --preflight
 ```
 
 `--preflight` 必須搭配 `--epochs 1`，不能搭配 `--resume`。val 子集會分別從正常、異常窗口取樣。若 val 只有一類，改用 `--selection mse`。每次診斷也需要新的實驗名稱，避免覆寫已有輸出。正式訓練移除 `--preflight` 並設定 `--epochs 30`，使用另一個新實驗名稱。
@@ -55,10 +55,10 @@ python benchmark/ASTT/scripts/train.py --data-dir data/astt/prepared/artillery-s
 python benchmark/ASTT/tools/prepare_dataset.py
 ```
 
-操作見 [DATASET_PREPARATION.md](DATASET_PREPARATION.md)。預設比例 7:3、固定 seed 2026、標記與匯出固定 30 FPS、名稱 `artillery-shell`、輸出父目錄 `data/astt/prepared/`。每次匯出建立新的 `<名稱>_vN/`，至少兩個獨立來源群組。
+操作見 [DATASET_PREPARATION.md](DATASET_PREPARATION.md)。預設比例 7:3、固定 seed 2026、標記與匯出固定 30 FPS、名稱 `artillery-shell`、輸出父目錄 `benchmark/ASTT/data/prepared/`。每次匯出建立新的 `<名稱>_vN/`，至少兩個獨立來源群組。
 
 不開 GUI 時，用 `--project <標記JSON> --preview` 預覽或 `--export` 匯出。可搭配 `--output-parent`、`--name`、`--ratios TRAIN VAL`、`--seed`。影片高幀率取樣、低幀率重複影格，統一 30 FPS；圖片資料夾必須已是 30 FPS 序列。此標記工具沒有 `--fps` 參數。比例按來源群組近似分配。舊版標記載入後需重新確認並按完成。
 
 此工具只產生 train／val。訓練結束會輸出最佳模型的 val 結果；另行查看時執行 `test.py --split val`。舊手動資料集仍可使用獨立 test。
 
-訓練／測試的 `--data-dir` 指向版本目錄，例如 `data/astt/prepared/artillery-shell_v1`。該版本 README 會依 val 可評分類別生成 `--selection auc` 或 `mse` 指令。
+訓練／測試的 `--data-dir` 指向版本目錄，例如 `benchmark/ASTT/data/prepared/artillery-shell_v1`。該版本 README 會依 val 可評分類別生成 `--selection auc` 或 `mse` 指令。

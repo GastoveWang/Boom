@@ -14,13 +14,13 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 import cv2
 from PIL import Image, ImageTk
 
-from st2.data.annotations import (ANNOTATIONS_ROOT, PREPARED_ROOT, PROJECT_ROOT,
+from st2.data.annotations import (ANNOTATIONS_ROOT, DATASET_ROOT, PROJECT_ROOT,
     SmokeProject, SmokeSource, ExportCancelled, export_dataset, load_project,
     merge_intervals, plan_split, save_project)
 
 
 class SmokeAnnotationApp:
-    def __init__(self, root, project=None, output_parent=PREPARED_ROOT, name='st2',
+    def __init__(self, root, project=None, output_parent=DATASET_ROOT, name='st2',
                  ratios=(7., 3.), history_frames=4, seed=2026):
         self.root = root
         root.title('ST2 逐幀區域標註')
@@ -1020,7 +1020,7 @@ class SmokeAnnotationApp:
         self.root.destroy()
 
 
-def launch(project=None, output_parent=PREPARED_ROOT, name='st2', ratios=(7., 3.), history_frames=4, seed=2026):
+def launch(project=None, output_parent=DATASET_ROOT, name='st2', ratios=(7., 3.), history_frames=4, seed=2026):
     root = tk.Tk()
     SmokeAnnotationApp(root, project, output_parent, name, ratios, history_frames, seed)
     root.mainloop()

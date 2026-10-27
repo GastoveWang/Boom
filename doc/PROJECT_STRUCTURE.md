@@ -68,7 +68,7 @@ YOLO 模型可用 `--yolo-model-path` 指定。即時辨識一般物件時，可
 ```text
 src/st2/
   __main__.py           # 統一命令入口：python src/st2 <command>
-  cli/                  # train、infer、prepare、export_tensorboard
+  cli/                  # train、infer、prepare、export_tensorboard、visualize
   models/
     network.py          # ST2Config、ST2Model、ST2Criterion
     transformer.py      # 純 Transformer 三分支、patch與attention
@@ -85,11 +85,12 @@ src/st2/
     postprocess.py      # 分數換算與可選運動guard
     view.py             # 研究推論畫面
     tensorboard.py      # 既有metrics匯入TensorBoard
+    visualize.py        # torchview實際forward圖，SVG／DOT匯出
   common/
     utils.py            # 前處理、checkpoint、JSON與抽樣
 ```
 
-目前資料為 `data/st2/prepared/st2_v1/`；新訓練輸出 `output/st2/training/st2_<時間>_<ID>/`，自動推論位於同一run的`inference/st2_inference_<時間>_<ID>/`。獨立推論預設 `output/st2/inference/`。標註新匯出為 `data/st2/prepared/st2_vN/`。
+目前資料為 `data/st2/st2_v1/`；新訓練輸出 `output/st2/training/st2_<時間>_<ID>/`，自動推論位於同一run的`inference/st2_inference_<時間>_<ID>/`。獨立推論預設 `output/st2/inference/`。標註新匯出為 `data/st2/st2_vN/`。
 
 `data/astt_bbox`與`output/astt_bbox`已依使用者要求更名，檔案內容保留；原smoke_heatmap/roi_heatmap歷史run不移動、不改寫。舊Smoke Heatmap工具、匯入轉接及舊研究網路均已移除，統一使用ST²入口。移動清單見 [ST2_MIGRATION.md](history/ST2_MIGRATION.md)。
 

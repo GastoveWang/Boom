@@ -18,7 +18,7 @@ from st2.common.utils import save_checkpoint, subset
 
 def parser():
     p = argparse.ArgumentParser(description='ST2: ROI supervision + normal prediction MSE; train then infer')
-    p.add_argument('--data', type=Path, default=ROOT / 'data/st2/prepared/st2_v1')
+    p.add_argument('--data', type=Path, default=ROOT / 'data/st2/st2_v1')
     p.add_argument('--output', type=Path, default=ROOT / 'output/st2/training')
     p.add_argument('--epochs', type=int, default=30)
     p.add_argument('--history-frames', type=int, default=8, help='Past inputs; current scoring frame is separate')

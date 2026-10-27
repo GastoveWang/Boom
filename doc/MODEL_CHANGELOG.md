@@ -168,6 +168,26 @@
 - 輸出：驗證程式、權重與影片僅在tmp/st2_root_entry_20261027，完成後清理。未啟動正式30輪，也不以小樣本指標宣稱效果改善。根目錄、模型、設定與索引文件均已更新。
 - 指令：`conda activate boom` 後執行 `python train_st2.py`；更換來源加 `--infer-source "data/video/你的影片.mp4"`。
 
+## 2026-10-27：加入torchview模型運算圖
+
+- 需求：使用者明確指定torchview，希望將模型視覺化加入專案。
+- 新功能：新增engine/visualize.py與cli/visualize.py，統一入口`python src/st2 visualize`；實際追蹤完整ST²及predictor／motion／gate三分支的forward，顯示張量尺寸與運算連線，輸出SVG、DOT及summary.json。預設depth2、batch1、768×576、meta、四張圖，支援checkpoint、單一分支、CPU與深度／方向設定。
+- 環境：本機torchview 0.2.7與Python graphviz已存在，dot在boom環境Library/bin；自動尋找可執行檔，只暫時設定本程序PATH。新增可選依賴`.[st2-visualization]`，未安裝／更動本機套件。SVG使用內建字型度量以避免Linux字型名稱造成的跨平台裁切；不提供平台點陣圖渲染。
+- 模型／參數：不修改架構、loss、標註、訓練設定、門檻或推論分數；使用獨立模型，隨機初始化只用於無checkpoint時的架構展示。追蹤期間暫關融合MHA fastpath，完成／例外均恢復RNG與原設定。同架構權重無需重訓。
+- 驗證：完整預設架構四分支meta追蹤與SVG/DOT成功；自訂history3／patch8／embedding32的checkpoint嚴格載入、參數量與輸入尺寸正確；CPU DOT、重複匯出不覆蓋、缺dot保留DOT且partial、模擬追蹤失敗為failed、RNG／MHA／PATH恢復、權重SHA256不變均通過。這不是反向梯度圖、attention權重或煙霧效果評估。
+- 產物：正式本次新圖在`output/st2/visualization/st2_torchview_20261027_152849_adf6abb7/`，四張SVG文件快照在`doc/diagrams/`，操作見`doc/ST2_VISUALIZATION.md`。臨時驗證與點陣圖檢查僅在tmp/st2_torchview_20261027，完成後清理。既有資料、模型與輸出不改動，未啟動訓練。
+- 指令：`python src/st2 visualize`；例如 `--checkpoint "output/st2/training/你的run/best.pt" --part model --depth 3`。
+
+## 2026-10-27：ST²資料集移除prepared外層並推送全部更新
+
+- 需求：使用者要求將st2_v1移出prepared，全部程式與文件推送，但資料只保留資料夾，不上傳內容。
+- 修改前→後：`data/st2/prepared/st2_v1`以同磁碟rename搬至`data/st2/st2_v1`；移走空的.gitkeep後，prepared僅在確認空目錄時移除。訓練預設、標註匯出父目錄、根目錄入口與現行文件改為平坦路徑，內部常數PREPARED_ROOT更名DATASET_ROOT。新的匯出為data/st2/st2_v2等，不再建立prepared。
+- 資料完整性：45,097個原資料集檔案的相對清單、大小、修改時間搬移前後一致；67個JSON／JSONL／CSV／NPY雜湊一致。資料標註與來源不改寫，dataset fingerprint與既有v2.2權重一致。
+- Git範圍：data僅加入data/st2、st2_v1及train／val的零位元.gitkeep；不提交影像、標註、描述檔、資料集README或來源ID資料夾。權重與實驗輸出維持忽略。本次依「全部」授權一併保存前次torchview與既存ASTT路徑／文件修改；dev推送，不更新master。
+- 參數與相容性：只改資料根目錄及匯出位置，模型計算、loss、標註解讀、抽樣、分數、門檻及權重鍵不變，同架構權重不需重訓。續訓使用新的預設資料位置；歷史JSON路徑保留原紀錄，不自動改寫。
+- 驗證：新預設路徑、32,354train／12,571val窗口、資料指紋、真實正負窗口前向／反向及optimizer更新、平坦st2_v1/v2版本匯出、零位元標記均通過。ASTT官方18檔快照校驗與train/test入口help通過。
+- 臨時產物：tmp/st2_flat_data_20261027下完成搬移清單、檢查、合成影片及匯出，完成後清理；既有輸出不改動，未啟動正式訓練。現行指令仍為`python train_st2.py`。
+
 ## 後續紀錄格式
 
 ```text

@@ -1,5 +1,7 @@
 # ST² 區段與逐幀框選
 
+目前資料直接位於`data/st2/st2_v1/`，已移除prepared外層。Git只追蹤空的.gitkeep以保留st2_v1/train/val結構，實際影像、標註及描述檔僅保留本機。
+
 這個工具為 Boom 新模型保存「有物體的時間區段」與「每一幀的關注區域 BBox」，不需要標記物體類別。可以先畫一個模板，將相同位置的框套用到所選區段，再逐幀微調；每幀仍分開保存。
 
 時間軌顯示已標註區段、有框／缺框影格及目前播放位置，可直接點擊或拖曳跳轉。區段列表顯示開始／結束影格的秒數，滑鼠移到時間軌也會顯示精確秒數與影格範圍。
@@ -61,7 +63,7 @@ python src/st2 prepare --project "output/st2/annotations/你的專案.json"
 
 ```text
 Boom/
-├── data/st2/prepared/<名稱>_vN/
+├── data/st2/<名稱>_vN/
 │   ├── project.json                # 本次標註快照
 │   ├── split_report.json           # 群組分配、窗口與略過統計
 │   ├── README.md
@@ -79,7 +81,7 @@ Boom/
     └── results/                   # checkpoint 獨立驗證結果
 ```
 
-預設名稱 `st2`，匯出時選擇尚未存在的版本。首次為 `st2_v1`，已有 `st2_v1` 時會建立 `st2_v2`。UI 可選其他輸出父目錄及名稱。標註工具不產生訓練模型；目前資料集為 data/st2/prepared/st2_v1，新訓練資料以 --data 指定匯出位置。
+預設名稱 `st2`，匯出時選擇尚未存在的版本。首次為 `st2_v1`，已有 `st2_v1` 時會建立 `st2_v2`。UI 可選其他輸出父目錄及名稱。標註工具不產生訓練模型；目前資料集為 data/st2/st2_v1，新訓練資料以 --data 指定匯出位置。
 
 ## 時間、座標與分組
 
@@ -103,7 +105,7 @@ UI 與資料匯出供 [ST² 訓練](ST2.md) 使用：框聯集轉為 mask，訓�
 
 ```powershell
 python src/st2 prepare --project "output/st2/annotations/你的專案.json" --preview
-python src/st2 prepare --project "output/st2/annotations/你的專案.json" --export --output-parent data/st2/prepared --name st2 --ratios 7 3 --history-frames 4
+python src/st2 prepare --project "output/st2/annotations/你的專案.json" --export --output-parent data/st2 --name st2 --ratios 7 3 --history-frames 4
 ```
 
 取消或匯出失敗會清除本次獨佔建立的未完成版本；已存在的資料、原始影片及已完成版本都保留。

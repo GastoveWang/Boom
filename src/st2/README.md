@@ -14,6 +14,7 @@ python src/st2 prepare
 python src/st2 train --epochs 30 --device cuda
 python src/st2 infer --checkpoint "output/st2/training/你的run/best.pt" --source "data/video/1440-1080/0603" --device cuda
 python src/st2 export-tensorboard --run "output/st2/training/你的run"
+python src/st2 visualize
 ```
 
 各命令加`--help`查看參數。安裝 `python -m pip install -e ".[st2]"` 後，也可用`python -m st2 train`。直接執行單一入口如`python src/st2/cli/train.py --help`也可。
@@ -47,3 +48,5 @@ src/st2/
 `ST2Runtime`位於`engine/runtime.py`，只回傳熱圖與分數，不確認煙霧事件；未來由Boom adapter接入原有顯示／事件流程。模型計算、state_dict與既有資料／輸出路徑不因本次整理改變。
 
 完整說明見[模型文件](../../doc/ST2.md)、[資料集文件](../../doc/ST2_DATASET.md)、[專案結構](../../doc/PROJECT_STRUCTURE.md)。
+
+模型運算圖與已產生的SVG快照見[torchview視覺化](../../doc/ST2_VISUALIZATION.md)，實作在`engine/visualize.py`。

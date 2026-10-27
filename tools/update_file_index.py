@@ -8,6 +8,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 PURPOSES = {
+    'src/st2/engine/visualize.py': 'torchview計算圖、分支與SVG／DOT匯出。',
+    'src/st2/cli/visualize.py': 'ST² visualize命令。',
+    'doc/ST2_VISUALIZATION.md': 'torchview操作與實際模型圖。',
     'train_st2.py': '根目錄ST²訓練與最佳權重自動影片推論入口。',
     'src/st2/cli/export_tensorboard.py': '將舊 metrics.jsonl 匯入獨立 TensorBoard 事件目錄，不修改來源。',
     'src/st2/cli/train.py': 'ST² 訓練、驗證、續訓與訓練後自動推論。',
@@ -181,6 +184,7 @@ def main():
         'python src/st2 prepare',
         'python src/st2 train --help',
         'python src/st2 infer --help',
+        'python src/st2 visualize --help',
         'python benchmark/ASTT/scripts/train.py --experiment-name astt_first --epochs 30 --batch-size 1',
         'python benchmark/ASTT/scripts/test.py --checkpoint benchmark/ASTT/output/astt/training/astt_first/checkpoints/best.pth --experiment-name astt_test --batch-size 1', '```', '',
         '影片／模型路徑為示例，須替換成現有檔案。ASTT 訓練前準備正常 train 與獨立 val；測試需本機版權重。即時相機需原廠 PySpin SDK。YOLO 訓練的模型、資料集與超參數由互動提示選擇，細節見 [TOOLS.md](TOOLS.md)。', '',

@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-PREPARED_ROOT = PROJECT_ROOT / 'data/st2/prepared'
+DATASET_ROOT = PROJECT_ROOT / 'data/st2'
 OUTPUT_ROOT = PROJECT_ROOT / 'output/st2'
 ANNOTATIONS_ROOT = OUTPUT_ROOT / 'annotations'
 IMAGE_SUFFIXES = {'.jpg', '.jpeg', '.png', '.bmp', '.webp'}
@@ -316,7 +316,7 @@ class ExportCancelled(Exception):
     pass
 
 
-def export_dataset(project, output_parent=PREPARED_ROOT, name='st2', ratios=(7., 3.), seed=2026,
+def export_dataset(project, output_parent=DATASET_ROOT, name='st2', ratios=(7., 3.), seed=2026,
                    history_frames=4, progress=None, cancel=None):
     report = plan_split(project, ratios, seed, history_frames)
     parent = Path(output_parent).resolve()

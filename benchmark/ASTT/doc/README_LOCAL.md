@@ -56,12 +56,12 @@ python -m pip install -r benchmark/ASTT/requirements.txt
 
 ## 資料格式
 
-可用 [影片標記工具](DATASET_PREPARATION.md) 標記異常時間區段，將未標記影格按本次專案規則視為正常，並依 7:3 自動分 train／val 與生成 `.npy`。預設版本路徑 `data/astt/prepared/artillery-shell_v1/astt/`；訓練／測試需加 `--data-dir "data/astt/prepared/artillery-shell_v1"`。工具會生成 train 標籤，loader 只使用 input＋target 全部正常的窗口。此工具只匯出 train／val；查看結果使用 `test.py --split val`。以下手動格式仍支援額外的獨立 test。
+可用 [影片標記工具](DATASET_PREPARATION.md) 標記異常時間區段，將未標記影格按本次專案規則視為正常，並依 7:3 自動分 train／val 與生成 `.npy`。預設版本路徑 `benchmark/ASTT/data/prepared/artillery-shell_v1/astt/`；訓練／測試需加 `--data-dir "benchmark/ASTT/data/prepared/artillery-shell_v1"`。工具會生成 train 標籤，loader 只使用 input＋target 全部正常的窗口。此工具只匯出 train／val；查看結果使用 `test.py --split val`。以下手動格式仍支援額外的獨立 test。
 
 以下格式仍可手動建立：
 
 ```text
-Boom/data/astt/
+Boom/benchmark/ASTT/data/astt/
   train/<normal_video_name>/frame_00000000.jpg ...
   val/frames/<val_video_name>/frame_00000000.jpg ...
   val/test_frame_masks/<val_video_name>.npy
@@ -105,7 +105,7 @@ python benchmark/ASTT/scripts/train.py --checkpoint output\astt\training\baselin
 
 `--resume` 恢復 model、optimizer、OneCycle scheduler、epoch、best score 與 Torch RNG；總 epochs、每 epoch steps、selection 和 registration 必須相同。它是完成原排程，不是任意延長 OneCycle；旁邊須保留同實驗的 `best.pth`，續訓新目錄也會保留此前最佳模型。`--checkpoint` 只初始化 model，開始新的 optimizer／排程；與 resume 互斥。使用本版存出的 checkpoint，拒絕自動猜測舊權重格式。
 
-每次用新的 experiment name，已存在目錄會拒絕覆寫；預設名稱包含時間。若中途中止，保留已完成 epoch 的 checkpoint。CLI 可覆寫 `--data-dir D:\datasets --output-dir D:\results`；data 根下須包含 `astt/<split>/`，output 根下自動依入口建立 `astt/training/<experiment-name>/` 或 `astt/results/<experiment-name>/`。
+每次用新的 experiment name，已存在目錄會拒絕覆寫；預設名稱包含時間。若中途中止，保留已完成 epoch 的 checkpoint。CLI 可覆寫 `--data-dir D:\datasets --output-dir D:\results`；指定的 data 根下須包含 `astt/<split>/`，指定的 output 根下自動依入口建立 `astt/training/<experiment-name>/` 或 `astt/results/<experiment-name>/`。
 
 ## 測試／推論
 
@@ -121,8 +121,8 @@ Scalar score 是原始 MSE，值越高越異常，不在每影片 min-max 正規
 ## 輸出
 
 ```text
-Boom/output/astt/training/<experiment_name>/（訓練）
-或 Boom/output/astt/results/<experiment_name>/（測試／影片推論）
+Boom/benchmark/ASTT/output/astt/training/<experiment_name>/（訓練）
+或 Boom/benchmark/ASTT/output/astt/results/<experiment_name>/（測試／影片推論）
   checkpoints/best.pth, last.pth  # training 存出，test 不複製大型 checkpoint
   scores/<video>.npy             # 長度 L；不可評分位置為 NaN
   heatmaps/<video>/<frame_index>.npy   # 原始 float32 H×W channel-mean error
