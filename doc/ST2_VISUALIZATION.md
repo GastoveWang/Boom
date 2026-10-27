@@ -40,7 +40,7 @@ python src/st2 visualize --part model --depth 1
 # 展開更多層，改成由左向右
 python src/st2 visualize --part predictor --depth 3 --direction LR
 # 依已訓練checkpoint的架構與影像尺寸畫圖
-python src/st2 visualize --checkpoint "output/st2/training/你的run/best.pt"
+python src/st2 visualize --checkpoint "output/st2/你的日期時間/training/best.pt"
 # CPU實際前向，或只輸出DOT原始圖
 python src/st2 visualize --device cpu --height 64 --width 96 --format dot
 ```

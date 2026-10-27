@@ -12,8 +12,8 @@ Boom名稱保留，`src/boom/`負責辨識執行、顯示、事件與定位；�
 conda activate boom
 python src/st2 prepare
 python src/st2 train --epochs 30 --device cuda
-python src/st2 infer --checkpoint "output/st2/training/你的run/best.pt" --source "data/video/1440-1080/0603" --device cuda
-python src/st2 export-tensorboard --run "output/st2/training/你的run"
+python src/st2 infer --checkpoint "output/st2/你的日期時間/training/best.pt" --source "data/video/1440-1080/0603" --device cuda
+python src/st2 export-tensorboard --run "output/st2/你的日期時間/training"
 python src/st2 visualize
 ```
 

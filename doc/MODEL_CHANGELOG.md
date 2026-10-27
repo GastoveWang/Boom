@@ -200,3 +200,21 @@
 驗證方法、實測結果：
 限制、未完成及下一步：
 ```
+
+
+## 2026-10-27 — ST² 日期時間實驗目錄與最終權重
+
+- 需求：輸出集中在 st2，以日期時間分次；training／inference 分開，訓練權重、log、TensorBoard 與基本資訊集中保存。
+- 修改前：`output/st2/training/st2_<時間>_<ID>/` 混合訓練檔案與 inference 子目錄，只保存 best.pt／last.pt。
+- 修改後：`output/st2/YYYYMMDD_HHMMSS_微秒/training/` 保存 best.pt、每輪更新的 last.pt、全部指定輪次完成後的 final.pt、training.log、tensorboard、config.json、metrics.jsonl、progress.json、pipeline.json，以及新增 summary.json。推論放在同層 inference，保留原有子目錄、影片、CSV 與摘要格式。`--output` 表示日期時間目錄的父目錄。獨立 infer 命令預設與內容不變。
+- 檔案／參數：`src/st2/engine/train.py`、README、ST²套件README、PROJECT_STRUCTURE、ST2、ST2_VISUALIZATION、TOOLS、MODEL_EVOLUTION；預設output由output/st2/training改為output/st2，其他模型與訓練參數不變。
+- 權重相容性／重訓：模型架構、loss、標註、分數、門檻、state_dict與checkpoint格式不變，既有ST²權重仍可載入／續訓，不需因此重訓。final.pt與完成當下last.pt的模型張量一致；保留最佳best.pt供自動推論。訓練未完成時沒有final.pt，推論失敗則保留已完成訓練的final.pt。既有資料、模型及輸出不搬移、不覆寫。
+- 指令：`python train_st2.py`；續訓 `python train_st2.py --resume "output/st2/你的日期時間/training/last.pt" --epochs 30`；TensorBoard `tensorboard --logdir output/st2`。
+- 驗證：實際資料train／val各16窗口、64×96、batch2、embedding32、patch8、layers1、window3、CPU完成1輪；核對三個權重、final／last逐張量一致、TensorBoard event、設定／log／指標／摘要與同層inference影片／CSV。以best.pt自動推論真實影片10幀後，從last.pt另開日期時間目錄續訓至第2輪，確認原權重內容不變、無推論來源的inference留空；根目錄--help成功。
+- 驗證輸出：僅使用 `tmp/st2_layout_20261027_check/`，驗證後清理；不啟動正式訓練，不據此宣稱辨識效果改善。
+
+## 2026-10-27 — 預訓練模型目錄路徑對齊
+
+- 需求：核對根目錄 models 新增子資料夾後的模型路徑。原 EDM 預設指向 pretrained 根目錄、YOLO 訓練工具下載位置也在根目錄；現分別指向 `models/pretrained/map_matching/` 與 `models/pretrained/detector/`，YOLO 遞迴搜尋既有權重維持不變。修正 YOLO 匯出函式獨立使用時的預設 checkpoints 路徑為專案根目錄下 `models/checkpoints/`。
+- 檔案／參數：`configs/matching.yaml`、`src/boom/config/defaults.py`、`tools/train_yolo.py` 與相關文件；兩個新目錄各加入 `.gitkeep`。沒有改動模型、loss、偵測參數、權重內容或格式，不需重訓；既有自訂路徑可繼續指定。
+- 驗證：讀取合併設定並檢查實際檔案，使用 CPU ONNX Runtime 載入 EDM 與預設 YOLO ONNX，確認 YOLO 訓練工具能找到 detector 子目錄的權重；未執行完整訓練或影片偵測。原模型與輸出保留原地，模型檔仍受 Git 忽略。

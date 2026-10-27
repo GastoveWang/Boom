@@ -20,7 +20,7 @@ class MapMatchingConfig:
     matcher_backend: str = "edm"
     device: str = "auto"
     lightglue_filter_threshold: float = 0.1
-    edm_model_path: str = "models/pretrained/edm_w640_h480_topk1680.onnx"
+    edm_model_path: str = "models/pretrained/map_matching/edm_w640_h480_topk1680.onnx"
     edm_conf_threshold: float = 0.2
     edm_sigma_threshold: float = 1e-6
     ratio_threshold: float = 0.70

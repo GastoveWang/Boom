@@ -13,6 +13,8 @@ python train_st2.py
 
 預設訓練30輪，資料為`data/st2/st2_v1`，完成後以best.pt推論`data/video/1440-1080/0603`。可加`--infer-source`指定其他影片或資料夾、`--resume`續訓，完整參數用`python train_st2.py --help`查看。
 
+每次輸出至 `output/st2/<日期時間>/`：`training/` 保存 best.pt、last.pt、final.pt、log、TensorBoard、設定與指標；`inference/` 保存原有推論結果。舊輸出保留原地。
+
 - [文件首頁與閱讀順序](doc/README.md)
 - [專案結構與 Boom 執行](doc/PROJECT_STRUCTURE.md)
 - [ST² 架構、訓練與推論](doc/ST2.md)

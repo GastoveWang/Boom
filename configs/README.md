@@ -36,4 +36,4 @@ EDM 所需參數都在 `matching.yaml` 的 `matching` 區塊：
 | `edm_sigma_threshold` | 精細匹配分數門檻 |
 | `device` | `auto`、`cpu` 或 `cuda`；`auto` 優先使用 CUDA |
 
-模型放在 `models/pretrained/edm_w640_h480_topk1680.onnx`，或用 `--map-edm-model-path` 指定其他位置。模型權重不納入 Git。原本的 SuperPoint + LightGlue 可用 `--map-matcher-backend superpoint_lightglue` 啟用，門檻由 `lightglue_filter_threshold` 控制。
+模型放在 `models/pretrained/map_matching/edm_w640_h480_topk1680.onnx`，或用 `--map-edm-model-path` 指定其他位置。模型權重不納入 Git。原本的 SuperPoint + LightGlue 可用 `--map-matcher-backend superpoint_lightglue` 啟用，門檻由 `lightglue_filter_threshold` 控制。

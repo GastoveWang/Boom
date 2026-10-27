@@ -9,7 +9,6 @@ from pathlib import Path
 import random
 import sys
 import time
-import uuid
 
 ROOT = Path(__file__).resolve().parents[3]
 from st2.common.utils import write_json, VIDEO_SUFFIXES
@@ -19,7 +18,8 @@ from st2.common.utils import save_checkpoint, subset
 def parser():
     p = argparse.ArgumentParser(description='ST2: ROI supervision + normal prediction MSE; train then infer')
     p.add_argument('--data', type=Path, default=ROOT / 'data/st2/st2_v1')
-    p.add_argument('--output', type=Path, default=ROOT / 'output/st2/training')
+    p.add_argument('--output', type=Path, default=ROOT / 'output/st2',
+                   help='Parent directory for dated runs containing training/ and inference/')
     p.add_argument('--epochs', type=int, default=30)
     p.add_argument('--history-frames', type=int, default=8, help='Past inputs; current scoring frame is separate')
     p.add_argument('--height', type=int, default=576)
@@ -260,9 +260,12 @@ def main(argv=None, *, default_infer_source=None):
             model.load_state_dict(checkpoint['model'])
             optimizer.load_state_dict(checkpoint['optimizer'])
         args.output.mkdir(parents=True, exist_ok=True)
-        run = args.output.resolve() / f'st2_{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:8]}'
+        experiment = args.output.resolve() / f'{datetime.now():%Y%m%d_%H%M%S_%f}'
+        experiment.mkdir(exist_ok=False)
+        run = experiment / 'training'
         run.mkdir(exist_ok=False)
-        logger = logging.Logger(f'st2.{run.name}', level=logging.INFO)
+        (experiment / 'inference').mkdir(exist_ok=False)
+        logger = logging.Logger(f'st2.{experiment.name}', level=logging.INFO)
         handler = logging.FileHandler(run/'training.log', encoding='utf-8')
         handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
         logger.addHandler(handler)
@@ -340,6 +343,18 @@ def main(argv=None, *, default_infer_source=None):
                        f"weighted AUC={b['weighted_frame_auc']} | raw AUC={b['raw_frame_auc']}")
             print(message, flush=True)
             logger.info(message)
+        # Only a fully completed training run receives final.pt. last.pt remains
+        # the most recent completed epoch and can also resume interrupted runs.
+        save_checkpoint(state, run / 'final.pt')
+        write_json(run / 'summary.json', {
+            'status': 'training_complete', 'completed_epochs': args.epochs,
+            'resumed_from': saved_args['resume'], 'training_output': str(run),
+            'inference_output': str(experiment / 'inference'),
+            'checkpoints': {'best': str(run / 'best.pt'), 'latest': str(run / 'last.pt'),
+                            'final': str(run / 'final.pt')},
+            'best_selection': list(best),
+            'final_metrics': row,
+        })
         if writer is not None:
             writer.close()
             writer = None
@@ -353,7 +368,7 @@ def main(argv=None, *, default_infer_source=None):
             logger.info('Training complete; starting inference from %s', run/'best.pt')
             write_json(run / 'pipeline.json', {'stage': 'inference', 'completed_epochs': args.epochs,
                                                'infer_source': saved_args['infer_source'], 'checkpoint': str(run/'best.pt')})
-            result, status = run_inference(run/'best.pt', args.infer_source, run/'inference',
+            result, status = run_inference(run/'best.pt', args.infer_source, experiment/'inference',
                                             args.device, args.batch_size, args.heatmap_max, args.inference_max_frames)
             write_json(run / 'pipeline.json', {'stage': status, 'completed_epochs': args.epochs,
                                                'inference_output': str(result), 'checkpoint': str(run/'best.pt')})

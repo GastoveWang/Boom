@@ -127,7 +127,7 @@ SuperPoint + LightGlue 仍可用 `superpoint_lightglue` 選擇。EDM 使用
 [EDM 官方專案](https://github.com/chicleee/EDM)
 提供的固定尺寸雙向 refinement ONNX 模型。從官方 README 連結的
 [權重資料夾](https://drive.google.com/drive/folders/1PkYNihwgnNwqQeeewBz4OUDrvY8xFdH0?usp=sharing)下載
-`edm_w640_h480_topk1680.onnx` 放在 `models/pretrained/`，或透過
+`edm_w640_h480_topk1680.onnx` 放在 `models/pretrained/map_matching/`，或透過
 `--map-edm-model-path` 指定實際位置。模型檔不會納入 Git。
 
 ```powershell
@@ -154,7 +154,7 @@ PyTorch 使用 CUDA 13，也不會拿其 cuDNN 給 CUDA 12 版 ONNX Runtime。
 推論耗時：
 
 ```powershell
-python tools/benchmark_matchers.py path/to/photo.jpg path/to/map_roi.jpg --edm-model-path models/pretrained/edm_w640_h480_topk1680.onnx --device cuda
+python tools/benchmark_matchers.py path/to/photo.jpg path/to/map_roi.jpg --edm-model-path models/pretrained/map_matching/edm_w640_h480_topk1680.onnx --device cuda
 ```
 
 這個快速比較把兩張圖都縮至 640×480。RANSAC 內點和重投影誤差只量測

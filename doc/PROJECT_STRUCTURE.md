@@ -35,7 +35,10 @@ Boom/
 │   ├── interfaces/                 # 共用介面
 │   └── ui/                         # 標註與畫面合成
 ├── src/st2/                       # ST² 獨立模型、訓練、標註與推論
-├── models/                          # 模型權重與轉出的 ONNX；舊檔案保留
+├── models/                          # 模型權重（不納入 Git）
+│   ├── pretrained/detector/       # YOLO 預訓練模型
+│   ├── pretrained/map_matching/   # EDM 地圖比對模型
+│   └── checkpoints/               # YOLO ONNX 模型
 ├── data/                            # 影片、圖片與 YOLO 資料集
 ├── tools/                           # YOLO 訓練、資料切分與相機檢查
 ├── output/
@@ -53,7 +56,7 @@ conda activate boom
 
 python run_offline.py motion --video data/video/example.mp4 --no-map --display
 python run_offline.py yolo --video data/video/example.mp4 --no-map --display
-python run_offline.py yolo --video data/video/example.mp4 --no-map --yolo-model-path models/pretrained/yolo26m.pt --yolo-target-classes person
+python run_offline.py yolo --video data/video/example.mp4 --no-map --yolo-model-path models/pretrained/detector/yolo26m.pt --yolo-target-classes person
 
 python run_realtime.py motion --display
 python run_realtime.py yolo --display
@@ -90,7 +93,7 @@ src/st2/
     utils.py            # 前處理、checkpoint、JSON與抽樣
 ```
 
-目前資料為 `data/st2/st2_v1/`；新訓練輸出 `output/st2/training/st2_<時間>_<ID>/`，自動推論位於同一run的`inference/st2_inference_<時間>_<ID>/`。獨立推論預設 `output/st2/inference/`。標註新匯出為 `data/st2/st2_vN/`。
+目前資料為 `data/st2/st2_v1/`；新訓練輸出 `output/st2/<日期時間>/training/`，自動推論位於同一日期時間資料夾的`inference/st2_inference_<時間>_<ID>/`。獨立推論預設 `output/st2/inference/`。標註新匯出為 `data/st2/st2_vN/`。
 
 `data/astt_bbox`與`output/astt_bbox`已依使用者要求更名，檔案內容保留；原smoke_heatmap/roi_heatmap歷史run不移動、不改寫。舊Smoke Heatmap工具、匯入轉接及舊研究網路均已移除，統一使用ST²入口。移動清單見 [ST2_MIGRATION.md](history/ST2_MIGRATION.md)。
 

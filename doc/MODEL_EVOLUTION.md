@@ -6,6 +6,8 @@
 
 目前只保留 `src/st2/` 的純 Transformer ST²；Boom 維持 motion／YOLO 與原有執行、顯示、事件及定位流程。下文按日期保留早期模型與搬移紀錄，涉及的舊入口可能已刪除。
 
+2026-10-27 訓練輸出改為 `output/st2/<日期時間>/training/` 與同層 `inference/`，新增訓練成功結束的 `final.pt` 與完成摘要；每輪 `last.pt`、最佳 `best.pt`、log、TensorBoard、設定與指標集中於 training。此次只調整實驗保存方式，不改相對 ASTT 的架構、loss、訓練參數或權重格式，既有 ST² 權重可繼續載入／續訓，無須因此重訓。
+
 | 項目 | 本機 ASTT 比較模型 | 目前 ST² |
 |---|---|---|
 | 空間／時間主幹 | STE → 每幀 CLS → TTE → CSA | 保留 patch 格點的交替空間視窗／時間注意力 |

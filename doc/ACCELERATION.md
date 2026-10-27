@@ -23,7 +23,7 @@ python run_offline.py motion --video data/video/example.mp4 --no-map --display
 python run_offline.py yolo --video data/video/example.mp4 --no-map --device auto --display
 
 python run_realtime.py motion --display
-python run_realtime.py yolo --yolo-model-path models/pretrained/yolo26m.pt --yolo-target-classes person --processing-width 960 --yolo-imgsz 512 --display
+python run_realtime.py yolo --yolo-model-path models/pretrained/detector/yolo26m.pt --yolo-target-classes person --processing-width 960 --yolo-imgsz 512 --display
 ```
 
 ## 本機觀察

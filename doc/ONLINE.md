@@ -36,7 +36,7 @@ python run_realtime.py motion --display
 python run_realtime.py yolo --display
 
 # YOLO26m 一般物件模型：辨識人
-python run_realtime.py yolo --yolo-model-path models/pretrained/yolo26m.pt --yolo-target-classes person --processing-width 960 --yolo-imgsz 512 --display
+python run_realtime.py yolo --yolo-model-path models/pretrained/detector/yolo26m.pt --yolo-target-classes person --processing-width 960 --yolo-imgsz 512 --display
 # 指定相機與曝光，測試 300 個處理影格
 python run_realtime.py motion --serial YOUR_CAMERA_SERIAL --exposure-us 3000 --display --max-frames 300
 ```

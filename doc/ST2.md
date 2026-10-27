@@ -49,13 +49,13 @@ conda activate boom
 python train_st2.py
 ```
 
-根目錄入口直接呼叫現有ST²引擎，預設資料`data/st2/st2_v1`、30輪、batch4、768×576、device=auto。訓練與驗證成功、權重保存完成後，載入best.pt對`data/video/1440-1080/0603`內影片推論。輸出仍在`output/st2/training/st2_<時間>_<ID>/`，自動推論放在同一run的inference子目錄。
+根目錄入口直接呼叫現有ST²引擎，預設資料`data/st2/st2_v1`、30輪、batch4、768×576、device=auto。訓練與驗證成功、權重保存完成後，載入best.pt對`data/video/1440-1080/0603`內影片推論。輸出仍在`output/st2/<日期時間>/training/`，自動推論放在同一日期時間資料夾的inference子目錄，與training並列。
 
 ```powershell
 # 更換推論來源
 python train_st2.py --infer-source "data/video/你的影片.mp4"
 # 續訓至總共30輪，完成後自動推論
-python train_st2.py --resume "output/st2/training/你的run/last.pt" --epochs 30
+python train_st2.py --resume "output/st2/你的日期時間/training/last.pt" --epochs 30
 ```
 
 根目錄入口只是設定預設推論來源；`python src/st2 train`原本的可選推論行為不變。所有ST²訓練參數均可使用，`--help`查看完整選項。推論來源先驗證，來源無效不啟動訓練；訓練失敗或中斷不會進入推論。既有模型與輸出不覆寫。
@@ -68,7 +68,7 @@ ST² 架構仍需重新訓練，不能把 v2.0/v2.2 的權重直接當作 ST²�
 
 目前主程式位於 `src/st2/`，不依賴 `boom`。新 checkpoint 使用 `st2.checkpoint.v1`，架構標記為 `st2.v1.0`；訓練／推論摘要保存 `model_name=ST2` 與完整名稱。載入器接受新容器，以及舊容器中variant明確為transformer的同架構ST²權重；state_dict鍵不變。baseline/camera-aware及缺少variant的歷史模型會明確拒絕，不再提供其網路程式。
 
-新入口 `src/st2/cli/train.py` 預設 `variant=transformer`，資料為 `data/st2/st2_v1`，輸出至 `output/st2/training/st2_<時間>_<ID>/`。標註新匯出名預設 st2，新標註 schema 為 `st2.annotations.v1`，仍支援舊 boom.astt_bbox.v1/v2/v3。歷史 JSON 與權重不改寫。
+新入口 `src/st2/cli/train.py` 預設 `variant=transformer`，資料為 `data/st2/st2_v1`，輸出至 `output/st2/<日期時間>/training/`。標註新匯出名預設 st2，新標註 schema 為 `st2.annotations.v1`，仍支援舊 boom.astt_bbox.v1/v2/v3。歷史 JSON 與權重不改寫。
 
 支援 `--patch-size`、`--transformer-layers`、`--window-size`；訓練尺寸需同時符合資料載入器的8倍數及patch整除。續訓恢復來源架構設定，推論尺寸由checkpoint取得。舊tools、boom.smoke_heatmap轉接與舊路徑自動映射已移除，只使用現行ST²入口與實際路徑。模型／loss類別為ST2Config、ST2Model、ST2Criterion；資料集為ST2Dataset／ST2SequenceDataset。
 
@@ -77,11 +77,11 @@ conda activate boom
 python src/st2 train --model-variant transformer --epochs 30 --history-frames 8 --height 576 --width 768 --batch-size 4 --workers 4 --device cuda --infer-source "data/video/1440-1080/0603"
 ```
 
-正式輸出仍在 `output/st2/training/st2_<時間>_<ID>/`。單獨推論與續訓使用 ST² 入口，依 checkpoint 恢復設定：
+正式輸出仍在 `output/st2/<日期時間>/training/`。單獨推論與續訓使用 ST² 入口，依 checkpoint 恢復設定：
 
 ```powershell
-python src/st2 infer --checkpoint "output/st2/training/你的新版run/best.pt" --source "data/video/1440-1080/0603" --device cuda
-python src/st2 train --resume "output/st2/training/你的新版run/last.pt" --epochs 30 --device cuda
+python src/st2 infer --checkpoint "output/st2/你的日期時間/training/best.pt" --source "data/video/1440-1080/0603" --device cuda
+python src/st2 train --resume "output/st2/你的日期時間/training/last.pt" --epochs 30 --device cuda
 ```
 
 ## 驗證與限制
@@ -113,3 +113,32 @@ Boom 的 `BaseSmokeDetector` 負責顯示與事件契約，ST²Runtime 是純模
 ST²入口已收進 `src/st2/cli/`，不再使用tools中的ST²腳本；平常從專案根目錄執行 `python src/st2 train`、`infer`、`prepare` 或 `export-tensorboard`。各命令可加`--help`。
 
 模型在`models/`，資料與標註在`data/`，訓練及推論引擎在`engine/`，共用I/O在`common/`。完整結構見 [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)。資料集、既有權重與輸出路徑不變。
+
+## 訓練輸出整理（2026-10-27）
+
+每次執行建立 `output/st2/YYYYMMDD_HHMMSS_微秒/`，日期時間來自執行電腦；微秒用於避免同秒啟動時撞名。`--output` 可更換這些日期時間資料夾的父目錄。既有輸出不搬移、不覆寫。
+
+```text
+output/st2/20261027_153000_123456/
+├── training/
+│   ├── best.pt          # 驗證集指標最佳；自動推論使用
+│   ├── last.pt          # 最新完成一輪的權重，含 optimizer，可續訓
+│   ├── final.pt         # 全部指定輪次成功完成的最終權重
+│   ├── training.log     # 訓練、驗證與流程錯誤紀錄
+│   ├── tensorboard/     # loss、驗證指標、學習率與設定
+│   ├── config.json      # 模型／訓練設定、資料指紋、數量與環境版本
+│   ├── metrics.jsonl    # 每輪 train／val 指標
+│   ├── progress.json    # 最新 batch 進度
+│   ├── pipeline.json    # 訓練／推論流程狀態
+│   └── summary.json     # 完成輪次、最後指標與權重位置
+└── inference/
+    └── st2_inference_<時間>_<ID>/  # 原有影片、CSV、摘要及權重快照
+```
+
+`final.pt` 與完成當下的 `last.pt` 保存同一輪模型；前者表示訓練成功結束，後者每輪更新。訓練失敗或中斷時不產生 `final.pt`；`last.pt` 保留最近成功保存的一輪。訓練完成後，即使後續推論失敗仍保留 final.pt。`best.pt` 可能來自較早的輪次。續訓會建立新的日期時間資料夾，也接受舊輸出中的權重路徑。未指定推論來源時 inference 目錄留空；根目錄入口仍預設完成後推論 0603 影片。`--no-tensorboard` 可停用 TensorBoard。
+
+```powershell
+python train_st2.py
+python train_st2.py --resume "output/st2/你的日期時間/training/last.pt" --epochs 30
+tensorboard --logdir output/st2
+```

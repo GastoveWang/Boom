@@ -61,7 +61,7 @@ def export_best_to_onnx(
         raise FileNotFoundError(f"找不到要轉換的權重檔案：{weight_path}")
 
     if checkpoints_dir is None:
-        checkpoints_dir = weight_path.parents[3] / "models" / "checkpoints"
+        checkpoints_dir = Path(__file__).resolve().parent.parent / "models" / "checkpoints"
     checkpoints_dir = Path(checkpoints_dir).resolve()
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
 
@@ -162,7 +162,7 @@ def main():
         LABEL_DIR / "model",
     ]
 
-    PRETRAINED_DIR = PROJECT_ROOT / "models" / "pretrained"
+    PRETRAINED_DIR = PROJECT_ROOT / "models" / "pretrained" / "detector"
     TRAINED_DIR = PROJECT_ROOT / "models" / "checkpoints"
     PRETRAINED_DIR.mkdir(parents=True, exist_ok=True)
     TRAINED_DIR.mkdir(parents=True, exist_ok=True)
@@ -252,7 +252,7 @@ def main():
         source_path = Path(downloaded_model.ckpt_path).resolve()
         if not source_path.exists():
             raise FileNotFoundError(f"\n模型下載後找不到權重檔：{source_path}")
-        # 將下載之權重儲存至 models/pretrained/
+        # 將下載之權重儲存至 models/pretrained/detector/
         if source_path != PRETRAINED_MODEL.resolve():
             shutil.copy2(source_path, PRETRAINED_MODEL)
             # 若 Ultralytics 下載至當前工作目錄（例如 tools/），自動清理以避免污染目錄

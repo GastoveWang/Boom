@@ -137,7 +137,7 @@ matching:
   matcher_backend: "edm" # "edm" (default), "superpoint_lightglue", "sift"
   device: "auto"
   lightglue_filter_threshold: 0.1
-  edm_model_path: "models/pretrained/edm_w640_h480_topk1680.onnx" # Official fixed 640x480 ONNX model
+  edm_model_path: "models/pretrained/map_matching/edm_w640_h480_topk1680.onnx" # Official fixed 640x480 ONNX model
   edm_conf_threshold: 0.2 # Coarse match confidence threshold
   edm_sigma_threshold: 0.000001 # Fine match score threshold
   ratio_threshold: 0.70
@@ -206,7 +206,7 @@ ui:
 | `--map-matcher-backend` | `edm` | map matcher backend；可選 superpoint_lightglue, edm, sift |
 | `--map-device` | `auto` | map device；可選 auto, cpu, cuda |
 | `--map-lightglue-filter-threshold` | `0.1` | map lightglue filter threshold |
-| `--map-edm-model-path` | `models/pretrained/edm_w640_h480_topk1680.onnx` | map edm model path |
+| `--map-edm-model-path` | `models/pretrained/map_matching/edm_w640_h480_topk1680.onnx` | map edm model path |
 | `--map-edm-conf-threshold` | `0.2` | map edm conf threshold |
 | `--map-edm-sigma-threshold` | `1e-06` | map edm sigma threshold |
 | `--map-search-radius-m` | `1000.0` | map search radius m |

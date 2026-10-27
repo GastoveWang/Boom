@@ -20,7 +20,7 @@ python src/st2 prepare
 python src/st2 train --epochs 30 --device cuda
 ```
 
-訓練資料預設 `data/st2/st2_v1/`，標註保存於 `output/st2/annotations/`，新訓練結果位於 `output/st2/training/`。舊 Smoke Heatmap 工具入口已刪除；請使用上表的新命令。
+訓練資料預設 `data/st2/st2_v1/`，標註保存於 `output/st2/annotations/`，新訓練結果位於 `output/st2/<日期時間>/training/`。舊 Smoke Heatmap 工具入口已刪除；請使用上表的新命令。
 
 框標註與略過規則見 [ST² 資料集](ST2_DATASET.md)，架構、續訓與推論見 [ST² 模型與操作](ST2.md)。
 
@@ -106,6 +106,6 @@ python tools/train_yolo.py --export
 python tools/train_yolo.py --export output/yolo_training/boom_v1_yolo26m/weights/best.pt
 ```
 
-* 程式會自動搜尋 `models/` 與 `label/model/` 根目錄與所有子資料夾中的預訓練權重。
+* 程式會自動搜尋 `models/` 與 `label/model/` 根目錄與所有子資料夾中的預訓練權重；下載的新 YOLO 權重放在 `models/pretrained/detector/`。
 * 訓練過程與權重保存在 `output/yolo_training/<dataset_name>_<model_name>/`（如 `output/yolo_training/boom_v1_yolo26m/`）。
 * 訓練完成（或訓練中途按 Ctrl+C 中斷但已有 `best.pt` 時）會自動將最優權重 `best.pt` 轉換匯出為 ONNX 格式，保存至 `models/checkpoints/`。
