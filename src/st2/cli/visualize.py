@@ -16,8 +16,8 @@ def parser():
     p.add_argument('--batch-size', type=int, default=1)
     p.add_argument('--depth', type=int, default=2, help='Module depth; 1 for overview, 3 or more for details')
     p.add_argument('--device', choices=['meta', 'cpu'], default='meta')
-    p.add_argument('--part', choices=['all', 'model', 'predictor', 'registration', 'gate'], default='all',
-                   help='Model/registration are explicit pipeline schematics; predictor/gate are torchview traces')
+    p.add_argument('--part', choices=['all', 'model', 'predictor', 'registration'], default='all',
+                   help='Model/registration are explicit pipeline schematics; predictor is a torchview trace')
     p.add_argument('--format', dest='formats', nargs='+', choices=['svg', 'dot'], default=['svg'])
     p.add_argument('--direction', choices=['TB', 'LR'], default='TB')
     p.add_argument('--no-expand-nested', dest='expand_nested', action='store_false')

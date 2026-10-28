@@ -1,54 +1,54 @@
-# ST² v2：正常畫面預測＋LoFTR／RANSAC 背景補償
+# ST² v3：不使用框資訊的預測與運動補償
 
-更新日期：2026-10-28。保留 ST² 的正常影格 Predictor 與框監督 Gate，移除 `ST2Motion`／`PairMotionEncoder`，背景配準統一使用凍結的戶外 LoFTR＋RANSAC。架構標記為 `st2.v2.0-loftr-ransac`。
+更新日期：2026-10-28。依使用者要求，先不考慮框資訊。現行模型保留Transformer Predictor＋凍結戶外LoFTR／RANSAC，沒有ST2Motion、Gate、ROI attention、BCE／Dice或框加權分數。架構標記 `st2.v3.0-box-free`，仍使用ST2作為套件名稱。
 
-Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統。ST² 是獨立辨識研究套件，目前輸出候選熱圖與分數，尚未接入 Boom 即時事件確認或 GPS 定位。
-
-## 資料流
+## 目前輸出什麼
 
 ```text
-歷史 8 幀 → ST2Predictor → 正常預測畫面 → 與當前影格比較 → 原始 MSE E
-歷史＋當前的 8 組相鄰影格 → 戶外 LoFTR → RANSAC 相似變換
-    → warp 前幀到後幀 → 補償 MSE、有效遮罩、配準品質
-完整 9 幀＋E＋補償資訊 → ST2Gate → attention A
-H = detached(E) × (0.05 + 0.95 × A)
+歷史8幀 → Predictor → 預測當前畫面 → 與實際當前幀比較 → raw_mse
+最後歷史幀＋實際當前幀 → LoFTR → RANSAC相似矩陣 → warp前幀
+    → 與實際當前幀比較 → compensated_mse＋有效遮罩＋配準品質
 ```
 
-Predictor 仍只讀歷史，沒有當前影格洩漏；本版沒有先對齊 Predictor 的歷史影像，也沒有改用補償 MSE 直接取代最終熱圖的 E。Gate 的補償輸入與原始誤差皆隔離梯度。配準品質差表示補償不確定，不等同有煙霧；補償後殘差也可能來自視差、樹葉、遮擋或曝光。
+這是兩種獨立診斷：`raw_mse`是模型預測誤差；`compensated_mse`是最新相鄰「實際影格」的補償後差異。補償殘差不使用Predictor輸出，兩者沒有相乘或融合成煙霧信心。本版也沒有先對齊Predictor歷史輸入；目的在先檢查哪些變化可由相機運動解釋，剩餘殘差不能直接認定為煙霧。
 
-## Predictor 與 Gate
+Predictor保留8歷史、RGB[0,1]、768×576、patch16／embedding128／4 heads／dropout0.1／2組空間時間block／window6，以及 `clip(last_history+0.25*tanh(delta),0,1)`。當前影格不進Predictor，維持因果性。預設總參數13,016,560，可訓練Predictor1,455,104，凍結LoFTR11,561,456。LoFTR含CNN，因此完整系統不是純Transformer。
 
-- 預設 8 張歷史、RGB [0,1]、768×576；patch16、embedding128、4 heads、dropout0.1、2 組空間／時間 block、6×6 空間視窗。
-- Predictor 保留 `clip(last_history + 0.25*tanh(delta),0,1)`；以位置編碼、交替視窗空間注意力、同格點時間注意力及線性 patch decoder 生成影像。
-- Gate 的序列 encoder 保留。誤差 embedding 從 9 通道擴為 17 通道：原始 MSE 1＋補償 MSE 8＋有效遮罩 8。八項配準品質沿影格對取平均後，經線性層加入 decoder query。
-- Predictor／Gate 仍無卷積；LoFTR 使用 CNN＋Transformer，因此完整系統不能稱為純 Transformer。
+## 「不使用框資訊」的範圍
 
-## LoFTR＋RANSAC 配準
+- 不讀框位置／尺寸／數量、target.labels或ROI mask；資料缺少target欄位也能訓練，既有框檔案不改動。
+- 不再依框做正負平衡取樣，不算ROI IoU、框導出的frame AUC，不以AUC選權重。
+- 不建立Gate或學習框注意力，不輸出attention／weighted_mse。
+- **仍使用整幀normal／roi／ignore狀態。**訓練與驗證只接受整段9幀皆normal的窗口；roi與ignore窗口不當成正常樣本。這是有整幀正常資訊的異常偵測，不是完全無標註學習。
+- 新版資料fingerprint只涵蓋來源分組、窗口、影格編號／檔名與狀態；框變更不影響此訓練的fingerprint。影像仍遵循原有資料路徑與連續窗口安全檢查。
 
-實作：`src/st2/models/registration.py`。依賴固定為 `kornia==0.8.2`，使用戶外預訓練 LoFTR；權重凍結、始終 eval，不計算配準反向梯度。
+訓練總loss只有正常窗口的全圖預測MSE，best.pt依最低正常驗證reconstruction MSE選擇。保留訓練相機軌跡增強，影像同步轉換但不建立任何框mask。新增缺框／不合法框內容忽略與fingerprint不受框變更影響的驗證。
 
-1. 相鄰兩幀轉灰階，最長邊最多 320，尺寸調整為 8 的倍數，最短邊至少 32。匹配與品質門檻在縮圖座標計算。
-2. 灰階標準差低於 0.01 的影格對直接判為不可靠，避免平坦畫面的虛假匹配。
-3. LoFTR 輸出兩幀對應點與 confidence；保留有限值及 confidence≥0.2 的點。
-4. `cv2.estimateAffinePartial2D(current_points, previous_points, RANSAC)` 估計平移、旋轉、等比例縮放。門檻 3 像素、最多 2000 次、confidence0.995、refine10。
-5. 接受條件：至少 12 內點、內點比例≥0.25、兩幀內點凸包面積各≥畫面5%、內點中位重投影誤差≤3像素、取樣尺度0.5～2、有效重疊≥30%。這些是初始設定，尚未依煙霧驗證集校準。
-6. 依縮圖比例與半像素 resize 座標轉換，將矩陣換回模型輸入解析度；用 `grid_sample` 雙線性取樣對齊。輸出矩陣為 3×3，但它表示相似變換，沒有透視自由度。
+標註UI、既有框、資料與輸出保留，供後續研究；不會因停用框監督而刪除。既有標註工具的匯出規則保留，本次直接使用已匯出資料的正常窗口，無須重畫或重新匯出框。
 
-矩陣方向明確為「當前／輸出像素中心 → 前幀／來源像素中心」。殘差在每個影格對的後幀座標，不是全部累積到最新幀。取樣越界像素不參與殘差；失敗輸出零殘差、全 false 遮罩、accepted=0，以及 identity 矩陣占位，不能將 identity 解讀成已成功估到零運動。
+## LoFTR＋RANSAC
 
-八項品質順序：accepted、inlier_ratio、normalized_reprojection_error、previous_coverage、current_coverage、overlap、mean_inlier_confidence、inlier_support。誤差以 RANSAC 門檻正規化，support 為 min(內點數/100,1)。accepted 才是是否成功的判斷；其他指標在拒絕時可能仍有診斷值。
+實作在 `src/st2/models/registration.py`，使用固定Kornia0.8.2戶外預訓練權重。LoFTR始終eval、權重凍結，不參與反向梯度。
 
-配準不讀真實 ROI，也不依賴推論時不存在的標註；RANSAC 假設主要匹配屬於背景。大面積動態物體、重複紋理及山林視差仍可能使此假設失效。沒有 ST2Motion 回退；失敗資訊交給 Gate。
+Gate移除後不再需要8組運動特徵，模型每個窗口只匹配最後歷史幀與當前幀一次。配準模組仍支援獨立輸入多幀，正式模型僅使用一對。
 
-為限制顯存，每個 batch 內的相鄰影格對逐組匹配。目前沒有跨窗口快取，避免打亂訓練／多影片時混用狀態；代價是重複窗口會重算，不能據此宣稱已達機載即時 FPS。
+預設匹配長邊最多320，尺寸為8倍數、最短邊至少32；灰階std<0.01拒絕；匹配confidence≥0.2。RANSAC以 `estimateAffinePartial2D(current,previous)` 估平移、旋轉、等比例縮放，閾值3縮圖像素、2000次、confidence0.995、refine10。接受至少12內點、內點比≥0.25、兩幀內點凸包面積各≥5%、中位誤差≤3、取樣尺度0.5～2、有效重疊≥30%。這些初始門檻尚未校準煙霧效能。
 
-## Loss 與權重相容性
+矩陣為3×3相似矩陣，方向為「當前輸出像素中心→前幀來源像素中心」，縮圖回原尺寸考慮半像素及x/y比例，再以雙線性取樣warp。不是具有透視自由度的homography或完整3D運動。品質八項順序仍為accepted、inlier_ratio、normalized_reprojection_error、previous_coverage、current_coverage、overlap、mean_inlier_confidence、inlier_support。
 
-總 loss = normal-window prediction MSE＋balanced BCE＋positive Dice。移除原運動背景 photometric loss、運動參數 regularization 與 `--motion-loss-weight`。保留 50% 訓練相機軌跡增強、框弱監督、normal／ignore 定義、top-0.1% 分數與固定對數顯示；框不是煙霧像素真值。
+無效邊界不計入補償殘差或分數。失敗的內部張量為零殘差、false遮罩、accepted=0及identity占位；CSV／Runtime的補償分數為空／None，畫面顯示配準不可用，不將其當作零變化。RANSAC仍可能受視差、樹葉、大面積動態物體或重複紋理影響。
 
-Gate 輸入已改變，新版本需重新訓練。舊 ST² v1／camera-aware／baseline 權重會明確拒絕，不靜默轉換；既有權重、資料與輸出保留原地。完整 v2 checkpoint 保存凍結 LoFTR state_dict 與全部配準設定，因此續訓與推論不需要下載或依賴原本的 LoFTR 檔案。容器仍用 `st2.checkpoint.v1`，以 `model_config.registration_backend=loftr-ransac` 區分新架構。
+## 輸出與顯示
 
-## 執行
+畫面分為原影片、原始預測MSE、LoFTR／RANSAC補償殘差疊圖。補償失敗時顯示不可用，無效邊界保留原圖，曲線留空。
+
+CSV分開記錄 `raw_mse_mean`／`raw_top_score`／`raw_score_01` 與 `compensated_mse_mean`／`compensated_top_score`／`compensated_score_01`，附最新配準品質。補償分數只取有效像素最高0.1%的平均；原始預測分數仍取全圖最高0.1%。維持固定對數0～1顯示，這些分數不是機率，也不能用舊Gate加權分數的門檻直接解讀。
+
+`--save-heatmaps`保存raw_mse、compensated_mse、compensated_valid、compensated_score_valid與registration_status，不再有attention或weighted_mse。可選舊motion guard保留作額外對照，預設off；不使用任何框。
+
+`ST2Runtime.process_frame()`回傳兩種MSE、有效遮罩、raw_score_01、補償score_01與配準品質／矩陣。配準失敗仍可回傳原始預測分數，補償score_01為None；影格跳號或來源尺寸變動會重新暖機。尚未接入Boom即時確認／GPS，不能用殘差直接產生已確認煙霧事件。
+
+## 執行與權重
 
 ```powershell
 conda activate boom
@@ -57,30 +57,26 @@ python src/st2 download-weights
 python train_st2.py
 ```
 
-LoFTR 權重放在 `models/pretrained/registration/loftr_outdoor.ckpt`，受 Git 忽略；下載命令保留既有檔案不覆寫。新訓練可用 `--loftr-weights` 指定戶外權重，`--registration-max-side` 調整匹配解析度；其他配準參數定義於 ST2Config，皆隨 checkpoint 保存。
+此機LoFTR權重已存在 `models/pretrained/registration/loftr_outdoor.ckpt`。新訓練可用 `--loftr-weights` 指定；匹配大小以 `--registration-max-side` 調整。移除 `--gate-floor`、`--positive-fraction` 與舊運動loss選項。
 
 ```powershell
-python src/st2 train --epochs 30 --device cuda --registration-max-side 320 --infer-source "data/video/1440-1080/0603"
+python src/st2 train --epochs 30 --device cuda --infer-source "data/video/1440-1080/0603"
 python train_st2.py --resume "output/st2/你的日期時間/training/last.pt" --epochs 30
-python src/st2 infer --checkpoint "output/st2/你的日期時間/training/best.pt" --source "data/video/1440-1080/0603" --device cuda
+python src/st2 infer --checkpoint "output/st2/你的日期時間/training/best.pt" --source "data/video/1440-1080/0603" --save-heatmaps
 python src/st2 visualize
 ```
 
-## 推論診斷與 Boom 接入
-
-CSV 新增最新影格對的 `registration_status`（warming_up／aligned／uncertain）、inlier_ratio、overlap 與正規化重投影誤差。配準品質不是煙霧信心，也不自動將原始模型候選分數設為零。`--save-heatmaps` 額外保存配準狀態。
-
-`ST2Runtime.process_frame()` 保留暖機／原始 MSE／加權 MSE／attention／score，另外回傳最新配準狀態、八項品質與矩陣。影格跳號或來源尺寸改變會重新暖機。尚未提供 `run_realtime.py st2`；Boom 的 motion／YOLO 與定位不變。
+舊v1／v2 Gate模型不相容，需要重新訓練，不自動丟棄舊權重中的Gate後假裝續訓。新checkpoint仍用 `st2.checkpoint.v1` 容器，以 `model_config.supervision=normal-frames-only` 區分架構，完整保存凍結LoFTR；續訓／推論不需外部權重或下載。
 
 ## 驗證與限制
 
-2026-10-28 使用實際戶外 LoFTR 權重驗證 RANSAC 外點排除、矩陣方向、縮圖比例、warp／無效邊界、平坦影格失敗、前向／反向、梯度隔離及完整 checkpoint 離線重載。實際森林照片在320×240人工右移12像素，估得逆向平移約(-12.114,-0.027)；有效區域補償 MSE約0.00002288，未補償全圖MSE約0.01902。這是受控幾何驗證，兩個均值的比較範圍不同，不是煙霧效能指標。
+2026-10-28已驗證缺失／惡意格式框欄位不影響資料讀取，正常窗口篩選、框變更不影響fingerprint、無Gate模型輸出、MSE-only loss、Predictor反向、LoFTR凍結、單對配準、因果性、完整checkpoint重載、舊Gate權重拒絕、失敗分數None與有效像素top-score。
 
-實際資料 train／val 各4窗口、64×96、batch2、embedding32、patch8、layers1、window3、CUDA，完成1輪與續訓至第2輪，兩次均自動推論真實影片10幀；已核對前8幀暖機、配準CSV、輸出層級、MP4解碼與Runtime跳號重置。小樣本AUC不作效能結論。預設768×576實際窗口前向通過，八組配準均accepted；預設總參數14,964,080，其中可訓練3,402,624、凍結LoFTR 11,561,456。
+實際資料train／val各4窗口、64×96、batch2、embedding32／patch8／layers1／window3、CUDA完成1輪及續訓到第2輪，兩次均對真實影片自動推論10幀；核對前8幀暖機、CSV不含ROI欄位、MP4解碼、Runtime空白畫面失敗與跳號重置。獨立CPU推論、guard、NPZ與新版顯示通過，並人工檢查渲染畫面。預設768×576實際窗口前向通過，最新一對配準accepted；三張架構圖匯出通過。
 
-尚未正式30輪訓練、校準煙霧誤報／漏報、量測穩態端到端FPS或地面定位誤差。此版不是完整3D補償，也未解決Predictor歷史未對齊或原始MSE熱圖基底的限制。
+這些是流程驗證，尚未正式30輪訓練、校準異常或煙霧門檻，未證明誤報／漏報改善、偵測延遲、端到端FPS或定位誤差。暫存驗證位於 `tmp/st2_box_free_20261028/`，完成後清理；原框標註及所有既有輸出保留。
 
-測試程式與產物位於 `tmp/loftr_validation_20261028/`，驗證完成清理；長期保留正式預訓練LoFTR權重及架構文件。舊版完整說明與驗證見 [ST² v1歷史快照](history/ST2_V1.md)，模型演進見 [MODEL_EVOLUTION.md](MODEL_EVOLUTION.md)。
+舊版方法見 [v1快照](history/ST2_V1.md)、[v2 Gate版快照](history/ST2_V2.md)；目前三圖見 [視覺化](ST2_VISUALIZATION.md)，完整變更見 [MODEL_CHANGELOG.md](MODEL_CHANGELOG.md)。
 
 ## 訓練輸出整理（2026-10-27）
 

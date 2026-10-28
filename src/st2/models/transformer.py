@@ -1,6 +1,6 @@
-"""ST2 v2: Transformer predictor and gate with external LoFTR/RANSAC registration.
+"""ST2 v2: Transformer predictor with external LoFTR/RANSAC registration.
 
-Predictor and gate use linear patch projections and attention; registration is external.
+Predictor uses linear patch projections and attention; registration is external.
 Warping, patch assembly and the final MSE weighting remain explicit operations.
 """
 import math
@@ -134,18 +134,3 @@ class ST2Predictor(nn.Module):
     def forward(self, history):
         delta = self.decoder(self.encoder(history))
         return (history[:, -1] + .25 * delta.tanh()).clamp(0, 1)
-
-
-class ST2Gate(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.encoder = SpaceTimeEncoder(config, config.history_frames + 1)
-        self.errors = PatchEmbedding(1 + 2 * config.history_frames, config.embedding_dim, config.patch_size)
-        self.statistics = nn.Linear(8, config.embedding_dim)
-        self.decoder = PatchDecoder(config, 1)
-
-    def forward(self, sequence, raw_mse, registration_mse, registration_valid, statistics):
-        memory = self.encoder(sequence)
-        extra = self.errors(torch.cat((raw_mse, registration_mse, registration_valid.to(raw_mse.dtype)), 1))
-        extra = extra + self.statistics(statistics)[:, None, None]
-        return self.decoder(memory, extra)

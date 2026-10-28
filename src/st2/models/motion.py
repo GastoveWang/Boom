@@ -57,6 +57,8 @@ def augment_camera_clip(history, current, mask, sequence_masks=None, probability
         masks = F.grid_sample(sequence_masks.reshape(-1, 1, h, w), grid, mode='nearest',
                               padding_mode='zeros', align_corners=False).reshape(b, length, 1, h, w)
         return frames[:, :-1], frames[:, -1], masks[:, -1], masks
+    if mask is None:
+        return frames[:, :-1], frames[:, -1], None, None
     target_grid = grid.reshape(b, length, h, w, 2)[:, -1]
     mask = F.grid_sample(mask, target_grid, mode='nearest', align_corners=False)
     return frames[:, :-1], frames[:, -1], mask, None

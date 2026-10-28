@@ -1,4 +1,4 @@
-"""Independent inference for normal-prediction MSE plus supervised ROI gate."""
+"""Independent inference for prediction error and box-free LoFTR/RANSAC residuals."""
 import argparse
 from collections import deque
 import csv
@@ -15,14 +15,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[3]
 from st2.common.utils import preprocess, write_json, VIDEO_SUFFIXES
-from st2.engine.postprocess import ScoreNormalizer, CameraMotionGuard
-
-
-def top_score(values):
-    import numpy as np
-    flat = values.reshape(-1)
-    k = max(1, math.ceil(len(flat) * .001))
-    return float(np.partition(flat, len(flat) - k)[-k:].mean())
+from st2.engine.postprocess import ScoreNormalizer, CameraMotionGuard, top_score
 
 
 def infer_one(source, directory, model, height, width, args, device, progress_path, progress):
@@ -36,7 +29,7 @@ def infer_one(source, directory, model, height, width, args, device, progress_pa
     writer = None
     started = last_log = time.perf_counter()
     result = {'source': str(source), 'output': str(directory), 'status': 'running',
-              'written_frames': 0, 'scored_frames': 0, 'max_raw_score': None, 'max_weighted_score': None}
+              'written_frames': 0, 'scored_frames': 0, 'max_raw_score': None, 'max_compensated_score': None}
     history = deque(maxlen=model.config.history_frames + 1)
     normalizer = ScoreNormalizer(args.score_max, args.score_knee)
     guard = CameraMotionGuard(model.config.history_frames, rotation_limit=args.motion_rotation_limit,
@@ -45,49 +38,47 @@ def infer_one(source, directory, model, height, width, args, device, progress_pa
     curve = deque()
     pending = []
 
-    def emit(frame, index, raw=None, weighted=None, attention=None, support=None, motion=None, registration=None):
+    def emit(frame, index, raw=None, compensated=None, valid=None, support=None, motion=None, registration=None):
         motion = motion or {'motion_status': 'warming_up', 'motion_score_valid': False}
-        row = {'frame_index': index, 'time_seconds': index / fps, 'status': 'warming_up' if raw is None else 'scored',
-               'raw_mse_mean': None, 'weighted_mse_mean': None, 'raw_top_score': None,
-               'weighted_top_score': None, 'attention_max': None, 'guarded_top_score': None,
-               'raw_score_01': None, 'learned_weighted_score_01': None, 'target_score_01': None,
-               'motion_status': motion['motion_status'], 'motion_score_valid': motion['motion_score_valid'],
-               **{k: motion.get(k) for k in ('rotation_deg_per_second', 'translation_diagonal_per_second',
-                                             'motion_inlier_ratio', 'motion_overlap', 'motion_residual_threshold',
-                                             'motion_support_fraction')}}
+        row = {key: None for key in ('raw_mse_mean', 'compensated_mse_mean', 'raw_top_score',
+                                    'compensated_top_score', 'raw_score_01', 'compensated_score_01')}
+        row.update(frame_index=index, time_seconds=index / fps,
+                   status='warming_up', motion_status=motion['motion_status'])
         row.update(registration or {'registration_status': 'warming_up'})
-        final_map = weighted
+        displayed = None
         if raw is not None:
-            a, b = top_score(raw), top_score(weighted)
-            if guard is not None and motion['motion_score_valid']:
-                final_map = weighted * support
-            final_score = top_score(final_map) if motion['motion_score_valid'] else None
-            normalized_raw = normalizer(a)
-            normalized_target = normalizer(final_score) if final_score is not None else None
-            row.update(raw_mse_mean=float(raw.mean()), weighted_mse_mean=float(weighted.mean()),
-                       raw_top_score=a, weighted_top_score=b, attention_max=float(attention.max()),
-                       guarded_top_score=final_score, raw_score_01=normalized_raw,
-                       learned_weighted_score_01=normalizer(b), target_score_01=normalized_target,
-                       status='scored' if normalized_target is not None else 'camera_motion_uncertain')
+            a = top_score(raw)
+            usable = row['registration_status'] == 'aligned' and bool(valid.any())
+            b = top_score(compensated, valid) if usable else None
+            if usable and motion['motion_score_valid']:
+                displayed = compensated * support if guard is not None else compensated
+                score = top_score(displayed, valid)
+            else:
+                score = None
+            normalized = normalizer(score) if score is not None else None
+            row.update(raw_mse_mean=float(raw.mean()), raw_top_score=a, raw_score_01=normalizer(a),
+                       compensated_mse_mean=float(compensated[valid].mean()) if usable else None,
+                       compensated_top_score=b, compensated_score_01=normalized,
+                       status='scored' if normalized is not None else 'camera_motion_uncertain')
             result['scored_frames'] += 1
-            result['valid_target_score_frames'] += normalized_target is not None
-            result['camera_uncertain_frames'] += normalized_target is None
+            result['valid_compensated_score_frames'] += normalized is not None
+            result['camera_uncertain_frames'] += normalized is None
             result['max_raw_score'] = max(result['max_raw_score'] or 0., a)
-            result['max_weighted_score'] = max(result['max_weighted_score'] or 0., b)
-            curve.append((index / fps, normalized_raw, normalized_target))
+            if b is not None:
+                result['max_compensated_score'] = max(result['max_compensated_score'] or 0., b)
+            curve.append((index / fps, normalizer(a), normalized))
             while curve and curve[0][0] < index / fps - 10:
                 curve.popleft()
             if args.save_heatmaps:
                 np.savez_compressed(directory / 'heatmaps' / f'{index:08d}.npz',
-                                    raw_mse=raw, weighted_mse=weighted, attention=attention,
-                                    displayed_mse=final_map,
-                                    target_score_valid=np.array(motion['motion_score_valid']),
+                                    raw_mse=raw, compensated_mse=compensated, compensated_valid=valid,
+                                    compensated_score_valid=np.array(score is not None),
                                     registration_status=np.array(row['registration_status']))
         csv_writer.writerow(row)
-        writer.write(render_st2(frame, raw, final_map, curve, index, fps, args.heatmap_max,
-                                       motion_status=motion['motion_status'], normalized=True,
-                                       raw_values=(row['raw_top_score'], row['weighted_top_score']),
-                                       model_name=model.config.model_name))
+        writer.write(render_st2(frame, raw, displayed, curve, index, fps, args.heatmap_max,
+                                motion_status=f"LoFTR: {row['registration_status']} | guard: {motion['motion_status']}",
+                                normalized=True, raw_values=(row['raw_top_score'], row['compensated_top_score']),
+                                model_name=model.config.model_name, compensated_valid=valid))
         result['written_frames'] += 1
 
     def flush():
@@ -98,7 +89,8 @@ def infer_one(source, directory, model, height, width, args, device, progress_pa
         with torch.inference_mode():
             outputs = model(past, current)
         maps = {key: outputs[key].detach().float().cpu().numpy()[:, 0]
-                for key in ('raw_mse', 'weighted_mse', 'attention')}
+                for key in ('raw_mse', 'compensated_mse')}
+        valid = outputs['compensated_valid'].cpu().numpy()[:, 0]
         if not all(np.isfinite(value).all() for value in maps.values()):
             raise ValueError('Non-finite heatmap')
         quality = outputs['registration_quality'][:, -1].float().cpu().numpy()
@@ -108,7 +100,7 @@ def infer_one(source, directory, model, height, width, args, device, progress_pa
                             'registration_inlier_ratio': float(q[1]),
                             'registration_overlap': float(q[5]),
                             'registration_reprojection_error_normalized': float(q[2])}
-            emit(frame, index, maps['raw_mse'][i], maps['weighted_mse'][i], maps['attention'][i], support, motion, registration)
+            emit(frame, index, maps['raw_mse'][i], maps['compensated_mse'][i], valid[i], support, motion, registration)
         pending.clear()
 
     try:
@@ -120,18 +112,16 @@ def infer_one(source, directory, model, height, width, args, device, progress_pa
         if not math.isfinite(fps) or fps <= 0 or min(source_width, source_height) <= 0:
             raise ValueError('Invalid video FPS or dimensions')
         result.update(source_width=source_width, source_height=source_height, fps=fps, reported_frames=count)
-        result.update(valid_target_score_frames=0, camera_uncertain_frames=0)
+        result.update(valid_compensated_score_frames=0, camera_uncertain_frames=0)
         writer = cv2.VideoWriter(str(directory / 'annotated.mp4'), cv2.VideoWriter_fourcc(*'mp4v'), fps, (1920, 900))
         if not writer.isOpened():
             raise ValueError('Cannot open MP4 writer')
         if args.save_heatmaps:
             (directory / 'heatmaps').mkdir()
         with (directory / 'frame_scores.csv').open('x', newline='', encoding='utf-8') as stream:
-            csv_writer = csv.DictWriter(stream, fieldnames=['frame_index', 'time_seconds', 'status', 'raw_mse_mean',
-                'weighted_mse_mean', 'raw_top_score', 'weighted_top_score', 'attention_max', 'guarded_top_score',
-                'raw_score_01', 'learned_weighted_score_01', 'target_score_01', 'motion_status', 'motion_score_valid',
-                'rotation_deg_per_second', 'translation_diagonal_per_second', 'motion_inlier_ratio',
-                'motion_overlap', 'motion_residual_threshold', 'motion_support_fraction',
+            csv_writer = csv.DictWriter(stream, fieldnames=['frame_index', 'time_seconds', 'status',
+                'raw_mse_mean', 'compensated_mse_mean', 'raw_top_score', 'compensated_top_score',
+                'raw_score_01', 'compensated_score_01', 'motion_status',
                 'registration_status', 'registration_inlier_ratio', 'registration_overlap',
                 'registration_reprojection_error_normalized'])
             csv_writer.writeheader()
@@ -233,8 +223,9 @@ def run_inference(checkpoint, source, output, device='auto', batch_size=4, heatm
                 'heatmap_max': heatmap_max, 'batch_size': batch_size, 'max_frames': max_frames,
                 'save_heatmaps': save_heatmaps, 'score_top_fraction': .001, 'frame_index_base': 0,
                 'raw_mse_definition': 'mean RGB squared error in [0,1], predicted from past frames only',
-                'weighted_definition': 'raw_mse * (gate_floor + (1-gate_floor)*attention); not raw MSE',
-                'postprocess_version': 'roi_heatmap.v2.1',
+                'compensated_definition': 'mean RGB squared difference between warped previous actual frame and current; valid pixels only; independent of predictor',
+                'box_supervision': False,
+                'postprocess_version': 'st2.box-free.v3',
                 'normalization': {'formula': 'clip(log1p(score/knee)/log1p(maximum/knee),0,1)',
                                   'maximum': normalizer.maximum, 'knee': normalizer.knee,
                                   'scope': 'fixed and shared across videos and score types; not a probability'},
@@ -263,7 +254,7 @@ def run_inference(checkpoint, source, output, device='auto', batch_size=4, heatm
 
 
 def main():
-    p = argparse.ArgumentParser(description='8 past frames -> normal prediction -> raw and ROI-weighted MSE heatmaps')
+    p = argparse.ArgumentParser(description='Box-free prediction MSE and LoFTR/RANSAC compensated frame differences')
     p.add_argument('--checkpoint', type=Path, required=True)
     p.add_argument('--source', type=Path, required=True)
     p.add_argument('--output', type=Path, default=ROOT / 'output/st2/inference')

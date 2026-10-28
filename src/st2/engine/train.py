@@ -1,4 +1,4 @@
-"""Box-supervised target-change heatmaps; optionally infer after full training."""
+"""Box-free normal-frame prediction and motion diagnostics; optionally infer after full training."""
 import argparse
 from dataclasses import asdict
 from datetime import datetime
@@ -16,7 +16,7 @@ from st2.common.utils import save_checkpoint, subset
 
 
 def parser():
-    p = argparse.ArgumentParser(description='ST2: ROI supervision + normal prediction MSE; train then infer')
+    p = argparse.ArgumentParser(description='ST2: normal-frame MSE only, no boxes or Gate; train then infer')
     p.add_argument('--data', type=Path, default=ROOT / 'data/st2/st2_v1')
     p.add_argument('--output', type=Path, default=ROOT / 'output/st2',
                    help='Parent directory for dated runs containing training/ and inference/')
@@ -34,9 +34,7 @@ def parser():
     from st2.models.registration import DEFAULT_WEIGHTS
     p.add_argument('--loftr-weights', type=Path, default=DEFAULT_WEIGHTS, help='Outdoor LoFTR checkpoint for new training; full resume checkpoints embed it')
     p.add_argument('--registration-max-side', type=int, default=320)
-    p.add_argument('--gate-floor', type=float, default=.05)
     p.add_argument('--lr', type=float, default=1e-4)
-    p.add_argument('--positive-fraction', type=float, default=.5)
     p.add_argument('--workers', type=int, default=4, help='Parallel image loaders; use 0 for serial loading')
     p.add_argument('--device', default='auto')
     p.add_argument('--seed', type=int, default=2026)
@@ -52,17 +50,10 @@ def parser():
 
 def make_loader(dataset, args, epoch, training):
     import torch
-    from torch.utils.data import DataLoader, WeightedRandomSampler
+    from torch.utils.data import DataLoader
     generator = torch.Generator().manual_seed(args.seed + epoch)
-    sampler = None
-    positive = sum(dataset.positive)
-    negative = len(dataset) - positive
-    if training and args.positive_fraction and positive and negative:
-        weights = [args.positive_fraction / positive if p else (1 - args.positive_fraction) / negative
-                   for p in dataset.positive]
-        sampler = WeightedRandomSampler(weights, len(dataset), replacement=True, generator=generator)
-    return DataLoader(dataset, batch_size=args.batch_size, shuffle=training and sampler is None,
-                      sampler=sampler, num_workers=args.workers, generator=generator,
+    return DataLoader(dataset, batch_size=args.batch_size, shuffle=training,
+                      num_workers=args.workers, generator=generator,
                       pin_memory=args.device.startswith('cuda'))
 
 
@@ -75,15 +66,11 @@ def log_scalars(writer, prefix, values, step):
 
 def run_epoch(model, criterion, loader, device, progress_path, epoch, optimizer=None, camera_augmentation=0.,
               writer=None, logger=None, total_epochs=None):
-    import numpy as np
     import torch
-    from scipy.stats import rankdata
     from tqdm import tqdm
     training = optimizer is not None
     model.train(training)
     total, count = {}, 0
-    labels, raw_scores, weighted_scores, attention_scores = [], [], [], []
-    intersection = union = predicted_pixels = actual_pixels = 0
     reconstruction_samples = 0
     started = last_report = time.perf_counter()
     phase = 'train' if training else 'val'
@@ -95,16 +82,15 @@ def run_epoch(model, criterion, loader, device, progress_path, epoch, optimizer=
                                               disable=not sys.stderr.isatty()) as bar:
         for step, batch in enumerate(loader, 1):
             values = [value.to(device, non_blocking=True) for value in batch]
-            history, current, mask, normal = values[:4]
-            sequence_masks = values[4] if len(values) == 5 else None
+            history, current = values
             if training and camera_augmentation:
                 from st2.models.motion import augment_camera_clip
-                history, current, mask, sequence_masks = augment_camera_clip(
-                    history, current, mask, sequence_masks, camera_augmentation)
+                history, current, _, _ = augment_camera_clip(
+                    history, current, None, probability=camera_augmentation)
             if training:
                 optimizer.zero_grad(set_to_none=True)
             outputs = model(history, current)
-            losses = criterion(outputs, mask, normal, sequence_masks)
+            losses = criterion(outputs)
             if not all(torch.isfinite(value).item() for value in losses.values()):
                 raise ValueError('Non-finite loss')
             if training:
@@ -115,21 +101,9 @@ def run_epoch(model, criterion, loader, device, progress_path, epoch, optimizer=
             registration_success = outputs['registration_success'].float().mean()
             total['registration_success_fraction'] = total.get('registration_success_fraction', 0.) + float(registration_success) * size
             count += size
-            reconstruction_samples += int(normal.sum())
+            reconstruction_samples += size
             for name, value in losses.items():
                 total[name] = total.get(name, 0.) + float(value.detach()) * size
-            if not training:
-                truth = mask.bool()
-                predicted = outputs['attention'] >= .5
-                intersection += int((truth & predicted).sum())
-                union += int((truth | predicted).sum())
-                predicted_pixels += int(predicted.sum())
-                actual_pixels += int(truth.sum())
-                labels.extend(mask.flatten(1).any(1).int().cpu().tolist())
-                for key, destination in (('raw_mse', raw_scores), ('weighted_mse', weighted_scores), ('attention', attention_scores)):
-                    flat = outputs[key].detach().flatten(1)
-                    k = max(1, math.ceil(flat.shape[1] * .001))
-                    destination.extend(flat.topk(k, dim=1).values.mean(1).cpu().tolist())
             now = time.perf_counter()
             bar.set_postfix(loss=f"{total['loss'] / count:.4f}", refresh=False)
             bar.update(1)
@@ -150,28 +124,11 @@ def run_epoch(model, criterion, loader, device, progress_path, epoch, optimizer=
     result = {name: value / count for name, value in total.items()}
     result.update(seconds=time.perf_counter() - started, windows=count,
                   normal_reconstruction_windows=reconstruction_samples)
-    if not training:
-        y = np.asarray(labels)
-        npositive, nnegative = int(y.sum()), int(len(y) - y.sum())
-
-        def auc(values):
-            if not npositive or not nnegative:
-                return None
-            ranks = rankdata(values, method='average')
-            return float((ranks[y == 1].sum() - npositive * (npositive + 1) / 2) / (npositive * nnegative))
-
-        result.update(weighted_frame_auc=auc(weighted_scores), raw_frame_auc=auc(raw_scores),
-                      attention_frame_auc=auc(attention_scores), positive_windows=npositive,
-                      roi_pixel_iou=intersection / union if union else None,
-                      roi_pixel_precision=intersection / predicted_pixels if predicted_pixels else 0.,
-                      roi_pixel_recall=intersection / actual_pixels if actual_pixels else None)
     return result
 
 
 def selection(val):
-    return (val['weighted_frame_auc'] if val['weighted_frame_auc'] is not None else -val['gate_loss'],
-            -val['gate_loss'])
-
+    return (-val['reconstruction'], -val['loss'])
 
 def main(argv=None, *, default_infer_source=None):
     p = parser()
@@ -198,8 +155,8 @@ def main(argv=None, *, default_infer_source=None):
         if min(args.epochs, args.batch_size) < 1 or min(args.workers, args.max_train_samples, args.max_val_samples,
                                                      args.inference_max_frames) < 0:
             raise ValueError('Invalid epoch, batch or sample limit')
-        if not math.isfinite(args.lr) or args.lr <= 0 or not 0 <= args.positive_fraction < 1:
-            raise ValueError('Invalid learning rate or sampling fraction')
+        if not math.isfinite(args.lr) or args.lr <= 0:
+            raise ValueError('Invalid learning rate')
         if not math.isfinite(args.heatmap_max) or args.heatmap_max <= 0:
             raise ValueError('heatmap-max must be positive and finite')
         if not 0 <= args.camera_augmentation <= 1:
@@ -210,8 +167,8 @@ def main(argv=None, *, default_infer_source=None):
             checkpoint = torch.load(args.resume, map_location='cpu', weights_only=True)
             if checkpoint.get('format') not in ('st2.checkpoint.v1', 'boom.roi_heatmap.checkpoint.v1'):
                 raise ValueError('Resume requires an ST2 checkpoint')
-            for name in ('history_frames', 'height', 'width', 'batch_size', 'embedding_dim', 'gate_floor',
-                         'lr', 'positive_fraction', 'seed', 'max_train_samples', 'max_val_samples'):
+            for name in ('history_frames', 'height', 'width', 'batch_size', 'embedding_dim',
+                         'lr', 'seed', 'max_train_samples', 'max_val_samples'):
                 setattr(args, name, checkpoint['args'][name])
             # Reject historical architectures before restoring their settings.
             ST2Config.from_checkpoint(checkpoint['model_config'])
@@ -233,23 +190,19 @@ def main(argv=None, *, default_infer_source=None):
         if device.type == 'cpu':
             torch.set_num_threads(min(8, torch.get_num_threads()))
         config = ST2Config(history_frames=args.history_frames, embedding_dim=args.embedding_dim,
-                                  gate_floor=args.gate_floor, variant=args.model_variant,
+                                  variant=args.model_variant,
                                   patch_size=args.patch_size, transformer_layers=args.transformer_layers,
                                   window_size=args.window_size, registration_max_side=args.registration_max_side)
         config.validate_image_size(args.height, args.width)
         if checkpoint:
             config = ST2Config.from_checkpoint(checkpoint['model_config'])
-        fingerprint = dataset_fingerprint(args.data)
+        fingerprint = dataset_fingerprint(args.data, include_targets=False)
         if checkpoint and checkpoint['dataset_fingerprint'] != fingerprint:
             raise ValueError('Dataset changed; start a new experiment')
-        history_masks = False
-        train = ST2Dataset(args.data, 'train', (args.height, args.width), args.history_frames, history_masks)
-        val = ST2Dataset(args.data, 'val', (args.height, args.width), args.history_frames, history_masks)
-        if not any(train.positive) or not any(s['normal_history'] for s in train.samples):
-            raise ValueError('Training requires both target ROI windows and wholly normal historical windows')
-        summary = {'train_windows': len(train), 'train_positive': sum(train.positive),
-                   'train_normal_prediction': sum(s['normal_history'] for s in train.samples),
-                   'val_windows': len(val), 'val_positive': sum(val.positive),
+        train = ST2Dataset(args.data, 'train', (args.height, args.width), args.history_frames)
+        val = ST2Dataset(args.data, 'val', (args.height, args.width), args.history_frames)
+        summary = {'train_windows': len(train), 'val_windows': len(val),
+                   'frame_selection': 'wholly normal windows; box coordinates and counts ignored',
                    'history_frames': args.history_frames, 'input_size_hw': [args.height, args.width], 'device': str(device)}
         train = subset(train, args.max_train_samples, args.seed)
         val = subset(val, args.max_val_samples, args.seed + 1)
@@ -281,15 +234,15 @@ def main(argv=None, *, default_infer_source=None):
         saved_args = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
         metadata = {'args': saved_args, 'model_config': asdict(config), 'dataset_fingerprint': fingerprint,
                     'dataset_summary': summary, 'selected_train_windows': len(train), 'selected_val_windows': len(val),
-                    'selection': 'highest weighted top-0.1%-pixel frame ROC AUC, tie lower gate loss',
-                    'loss': 'ST2 normal-window MSE + balanced gate BCE + positive Dice; frozen LoFTR/RANSAC',
+                    'selection': 'lowest normal validation reconstruction MSE, tie lower total loss',
+                    'loss': 'normal-frame reconstruction MSE only; frozen LoFTR/RANSAC diagnostics',
                     'model_version': config.model_version,
                     'model_name': config.model_name, 'model_display_name': config.model_display_name,
                     'camera_augmentation': {'probability': args.camera_augmentation, 'training_only': True,
-                                            'coherent_clip_and_masks': True},
+                                            'coherent_clip': True, 'uses_masks': False},
                     'registration': {'backend': config.registration_backend, 'frozen': True,
                                      'quality_fields': list(QUALITY_FIELDS)},
-                    'supervision': 'target inside box union; outside is interference; ignore windows excluded',
+                    'supervision': 'frame-level normal only; no box targets or masks; non-normal windows excluded',
                     'torch_version': str(torch.__version__)}
         write_json(run / 'config.json', metadata)
         write_json(run / 'pipeline.json', {'stage': 'training', 'total_epochs': args.epochs, 'infer_source': saved_args['infer_source']})
@@ -308,8 +261,8 @@ def main(argv=None, *, default_infer_source=None):
                 # An inherited best may originate before this resume run. Compare
                 # training settings rather than output/resume paths or epoch limits.
                 training_defaults = {'camera_augmentation': 0.}
-                training_names = ('history_frames', 'height', 'width', 'batch_size', 'embedding_dim', 'gate_floor',
-                                  'lr', 'positive_fraction', 'seed', 'max_train_samples', 'max_val_samples',
+                training_names = ('history_frames', 'height', 'width', 'batch_size', 'embedding_dim',
+                                  'lr', 'seed', 'max_train_samples', 'max_val_samples',
                                   'camera_augmentation', 'registration_max_side')
                 same_training = all(prior.get('args', {}).get(name, training_defaults.get(name)) ==
                                     checkpoint['args'].get(name, training_defaults.get(name)) for name in training_names)
@@ -329,7 +282,7 @@ def main(argv=None, *, default_infer_source=None):
             b = run_epoch(model, criterion, make_loader(val, args, 0, False), device, run/'progress.json', epoch,
                           logger=logger, total_epochs=args.epochs)
             if a['normal_reconstruction_windows'] == 0:
-                raise ValueError('No normal prediction windows sampled; increase samples or reduce positive fraction')
+                raise ValueError('No normal prediction windows sampled')
             row = {'epoch': epoch, 'train': a, 'val': b}
             with (run / 'metrics.jsonl').open('a', encoding='utf-8') as stream:
                 stream.write(json.dumps(row) + '\n')
@@ -348,7 +301,7 @@ def main(argv=None, *, default_infer_source=None):
             write_json(run / 'pipeline.json', {'stage': 'training', 'completed_epochs': epoch,
                                                'total_epochs': args.epochs, 'infer_source': saved_args['infer_source']})
             message = (f"Epoch {epoch}/{args.epochs} | train loss={a['loss']:.4f} | val loss={b['loss']:.4f} | "
-                       f"weighted AUC={b['weighted_frame_auc']} | raw AUC={b['raw_frame_auc']}")
+                       f"val reconstruction={b['reconstruction']:.6f}")
             print(message, flush=True)
             logger.info(message)
         # Only a fully completed training run receives final.pt. last.pt remains

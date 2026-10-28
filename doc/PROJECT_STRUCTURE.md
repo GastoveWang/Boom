@@ -76,11 +76,11 @@ src/st2/
   cli/                  # train、infer、prepare、export_tensorboard、visualize
   models/
     network.py          # ST2Config、ST2Model、ST2Criterion
-    transformer.py      # Predictor／Gate、patch與attention
+    transformer.py      # Predictor、patch與attention（無Gate）
     registration.py     # 凍結 LoFTR＋RANSAC 配準、品質與有效遮罩
     motion.py           # 訓練用相機軌跡增強
   data/
-    dataset.py          # 8幀歷史＋當前影格與9幀ROI mask
+    dataset.py          # 正常9幀窗口，不讀框／ROI mask
     sequence.py         # 來源分組、連續窗口與fingerprint
     annotations.py      # 逐幀標註與資料集匯出
     editor.py           # 影片標註UI
@@ -106,6 +106,6 @@ python src/st2 prepare
 python src/st2 train --epochs 30 --device cuda --infer-source "data/video/1440-1080/0603"
 ```
 
-目前只提供ST²（transformer），每個checkpoint保存實際架構與模型名稱；baseline/camera-aware執行程式已移除，既有輸出保留原地。v2.2已完成30輪，目前ST² v2已移除ST2Motion，改用LoFTR＋RANSAC；完成小規模流程驗證，尚未正式重訓，舊權重不相容。
+目前只提供ST²（transformer），每個checkpoint保存實際架構與模型名稱；baseline/camera-aware執行程式已移除，既有輸出保留原地。v2.2已完成30輪，目前ST² v3無框監督、Gate或ST2Motion，保留Predictor＋LoFTR／RANSAC；完成小規模流程驗證，尚未正式重訓，舊權重不相容。
 
 模型替換以Boom的BaseSmokeDetector作為執行端邊界，ST2Runtime提供純熱圖／分數。此次尚未建立把熱圖變成已確認煙霧事件的adapter，因此不新增即時偵測器選項、不改既有motion/YOLO行為。架構與指令見 [ST2.md](ST2.md)，資料見 [ST2_DATASET.md](ST2_DATASET.md)。

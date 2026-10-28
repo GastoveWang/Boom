@@ -11,7 +11,7 @@ import numpy as np
 import torch
 
 from st2.models.network import ST2Config, ST2Model
-from st2.engine.postprocess import ScoreNormalizer
+from st2.engine.postprocess import ScoreNormalizer, top_score
 from st2.common.utils import preprocess
 
 
@@ -20,8 +20,9 @@ class FramePrediction:
     frame_index: int
     ready: bool
     raw_mse: object = None
-    weighted_mse: object = None
-    attention: object = None
+    compensated_mse: object = None
+    compensated_valid: object = None
+    raw_score_01: object = None
     score_01: object = None
     registration_status: str = 'warming_up'
     registration_quality: object = None
@@ -74,14 +75,15 @@ class ST2Runtime:
         with torch.inference_mode():
             outputs = self.model(clip[:-1][None], clip[-1][None])
         maps = {key: outputs[key][0, 0].float().cpu().numpy()
-                for key in ('raw_mse', 'weighted_mse', 'attention')}
+                for key in ('raw_mse', 'compensated_mse')}
         if not all(np.isfinite(value).all() for value in maps.values()):
             raise ValueError('Non-finite model output')
-        flat = maps['weighted_mse'].reshape(-1)
-        k = max(1, int(np.ceil(len(flat) * .001)))
-        score = float(np.partition(flat, len(flat) - k)[-k:].mean())
+        valid = outputs['compensated_valid'][0, 0].cpu().numpy()
+        score = top_score(maps['compensated_mse'], valid)
+        raw_score = top_score(maps['raw_mse'])
         return FramePrediction(frame_index, True, **maps,
-                               score_01=self.normalizer(score),
+                               score_01=self.normalizer(score) if score is not None else None,
+                               raw_score_01=self.normalizer(raw_score), compensated_valid=valid,
                                registration_status='aligned' if bool(outputs['registration_success'][0, -1]) else 'uncertain',
                                registration_quality=outputs['registration_quality'][0, -1].cpu().numpy(),
                                registration_matrix=outputs['registration_matrix'][0, -1].cpu().numpy())

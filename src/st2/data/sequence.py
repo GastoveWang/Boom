@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import Dataset
 
 
-def dataset_fingerprint(root):
+def dataset_fingerprint(root, include_targets=True):
     digest = hashlib.sha256()
     root = Path(root).resolve()
     paths = [root / 'project.json', root / 'split_report.json']
@@ -18,7 +18,24 @@ def dataset_fingerprint(root):
             paths += sorted(root.glob(f'{split}/*/{name}'))
     for path in paths:
         digest.update(path.relative_to(root).as_posix().encode())
-        digest.update(path.read_bytes())
+        if include_targets:
+            digest.update(path.read_bytes())
+        else:
+            value = path.read_text(encoding='utf-8')
+            if path.name == 'frames.jsonl':
+                value = [{k: frame[k] for k in ('image', 'frame_index', 'state')}
+                         for frame in map(json.loads, value.splitlines())]
+            elif path.name == 'samples.jsonl':
+                value = [{k: sample[k] for k in ('input_images', 'target_frame')}
+                         for sample in map(json.loads, value.splitlines())]
+            elif path.name == 'project.json':
+                value = [{'id': source['id'], 'origin': source['origin']} for source in json.loads(value)['sources']]
+            elif path.name == 'split_report.json':
+                report = json.loads(value)
+                value = {k: report[k] for k in ('history_frames', 'assignments')}
+            else:
+                value = {'id': json.loads(value)['id']}
+            digest.update(json.dumps(value, sort_keys=True, ensure_ascii=False).encode())
     return digest.hexdigest()
 
 
@@ -29,11 +46,12 @@ class ST2SequenceDataset(Dataset):
     negative labels mean normal outside annotated intervals, not a smoke class.
     """
 
-    def __init__(self, root, split, image_size=(576, 768), num_queries=16, history_frames=8):
+    def __init__(self, root, split, image_size=(576, 768), num_queries=16, history_frames=8, read_targets=True):
         self.root = Path(root).resolve()
         if split not in ('train', 'val'):
             raise ValueError('split must be train or val')
         self.split = split
+        self.read_targets = read_targets
         self.height, self.width = image_size
         if any(v < 16 or v % 8 for v in image_size):
             raise ValueError('Image height/width must be >=16 and divisible by 8')
@@ -86,19 +104,21 @@ class ST2SequenceDataset(Dataset):
                     raise ValueError(f'Non-consecutive historical window in {folder}')
                 if any(frame['state'] not in ('normal', 'roi') for frame in history):
                     raise ValueError(f'Ignored/unknown frame in historical window: {folder}')
-                target = sample['target']
-                if any(type(label) is not int for label in target['labels']):
-                    raise ValueError(f'Class labels must be integers: {folder}')
-                labels = torch.tensor(target['labels'], dtype=torch.int64)
-                boxes = torch.tensor(target['boxes'], dtype=torch.float32).reshape(-1, 4)
-                if len(labels) != len(boxes) or (labels != 0).any() or len(boxes) > num_queries:
-                    raise ValueError(f'Invalid single-class targets/query capacity: {folder}')
-                corners = torch.cat((boxes[:, :2] - boxes[:, 2:] / 2,
-                                     boxes[:, :2] + boxes[:, 2:] / 2), dim=1)
-                if not torch.isfinite(boxes).all() or (boxes[:, 2:] <= 0).any() or (corners < -1e-6).any() or (corners > 1 + 1e-6).any():
-                    raise ValueError(f'Invalid target box coordinates: {folder}')
-                if bool(len(boxes)) != (history[-1]['state'] == 'roi'):
-                    raise ValueError(f'Target/frame state mismatch: {folder}')
+                target = {'labels': [], 'boxes': []}
+                if read_targets:
+                    target = sample['target']
+                    if any(type(label) is not int for label in target['labels']):
+                        raise ValueError(f'Class labels must be integers: {folder}')
+                    labels = torch.tensor(target['labels'], dtype=torch.int64)
+                    boxes = torch.tensor(target['boxes'], dtype=torch.float32).reshape(-1, 4)
+                    if len(labels) != len(boxes) or (labels != 0).any() or len(boxes) > num_queries:
+                        raise ValueError(f'Invalid single-class targets/query capacity: {folder}')
+                    corners = torch.cat((boxes[:, :2] - boxes[:, 2:] / 2,
+                                         boxes[:, :2] + boxes[:, 2:] / 2), dim=1)
+                    if not torch.isfinite(boxes).all() or (boxes[:, 2:] <= 0).any() or (corners < -1e-6).any() or (corners > 1 + 1e-6).any():
+                        raise ValueError(f'Invalid target box coordinates: {folder}')
+                    if bool(len(boxes)) != (history[-1]['state'] == 'roi'):
+                        raise ValueError(f'Target/frame state mismatch: {folder}')
                 # Store plain metadata: Windows workers must not pickle thousands
                 # of small tensors/shared-memory handles before their first batch.
                 end = sample['target_frame']
@@ -138,5 +158,7 @@ class ST2SequenceDataset(Dataset):
                 image = image.convert('RGB').resize((self.width, self.height), Image.Resampling.BILINEAR)
                 array = np.asarray(image, dtype=np.float32).copy() / 255.
                 images.append(torch.from_numpy(array).permute(2, 0, 1))
+        if not self.read_targets:
+            return torch.stack(images)
         return torch.stack(images), {'labels': torch.tensor(sample['labels'], dtype=torch.int64),
                                      'boxes': torch.tensor(sample['boxes'], dtype=torch.float32).reshape(-1, 4)}

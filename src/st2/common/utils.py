@@ -21,11 +21,13 @@ def preprocess(frame, height, width):
     return torch.from_numpy(array).permute(2, 0, 1)
 
 def subset(dataset, maximum, seed):
-    """Random, reproducible smoke-test subset retaining both frame categories."""
+    """Seeded subset; stratify only when the dataset explicitly provides labels."""
     if not maximum or maximum >= len(dataset):
         return dataset
     from torch.utils.data import Subset
     rng = random.Random(seed)
+    if not hasattr(dataset, 'positive'):
+        return Subset(dataset, rng.sample(range(len(dataset)), maximum))
     positives = [i for i, positive in enumerate(dataset.positive) if positive]
     negatives = [i for i, positive in enumerate(dataset.positive) if not positive]
     rng.shuffle(positives)

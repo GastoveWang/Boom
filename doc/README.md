@@ -12,7 +12,7 @@
 | 執行離線影片與即時相機辨識 | [執行設定](RUN_SETTINGS.md)、[即時相機](ONLINE.md) |
 | 找檔案負責什麼 | [逐檔功能索引](FILE_INDEX.md) |
 
-目前 Boom 提供 motion／YOLO 偵測器；ST² 提供獨立模型與逐幀熱圖介面，尚未接入即時煙霧事件確認。舊 Smoke Heatmap 入口與 baseline／camera-aware 研究程式已移除，既有資料、權重與輸出保留。
+目前ST² v3先不使用框監督，保留Predictor與LoFTR／RANSAC。Boom提供motion／YOLO偵測器；ST² 提供獨立模型與逐幀熱圖介面，尚未接入即時煙霧事件確認。舊 Smoke Heatmap 入口與 baseline／camera-aware 研究程式已移除，既有資料、權重與輸出保留。
 
 ## Boom 執行與工具
 

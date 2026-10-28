@@ -12,7 +12,7 @@ import uuid
 from st2.common.utils import write_json
 
 ROOT = Path(__file__).resolve().parents[3]
-PARTS = ('model', 'predictor', 'registration', 'gate')
+PARTS = ('model', 'predictor', 'registration')
 
 
 def pipeline_graph(part, direction):
@@ -21,7 +21,7 @@ def pipeline_graph(part, direction):
     graph = Digraph(f'ST2_{part}')
     graph.attr(rankdir=direction)
     graph.attr('node', shape='box')
-    graph.node('sequence', 'RGB history + current')
+    graph.node('sequence', 'Last historical RGB + current')
     graph.node('matcher', 'Frozen outdoor LoFTR\nCNN + Transformer correspondences')
     graph.node('ransac', 'RANSAC similarity matrix\nquality checks')
     graph.node('warp', 'Inverse pixel warp + valid overlap\nmasked RGB MSE + quality')
@@ -30,11 +30,9 @@ def pipeline_graph(part, direction):
         graph.node('history', 'Past frames only')
         graph.node('predictor', 'ST2Predictor\ncausal normal-frame prediction')
         graph.node('raw', 'Raw prediction MSE vs current')
-        graph.node('gate', 'ST2Gate\nRGB sequence + raw MSE + residuals + validity + quality')
-        graph.node('output', 'H = detached(raw MSE) * (floor + (1-floor)*sigmoid(logits))')
+        graph.node('output', 'Separate diagnostics:\nraw prediction MSE / compensated actual-frame MSE\nNo Gate, ROI or learned weighting')
         graph.edges([('history', 'predictor'), ('predictor', 'raw'), ('sequence', 'raw'),
-                     ('raw', 'gate'), ('warp', 'gate'), ('sequence', 'gate'),
-                     ('raw', 'output'), ('gate', 'output')])
+                     ('raw', 'output'), ('warp', 'output')])
     return graph
 
 
@@ -67,11 +65,8 @@ def graphviz_path(executable):
 def input_shapes(config, height, width, batch_size, part):
     history = (batch_size, config.history_frames, 3, height, width)
     current = (batch_size, 3, height, width)
-    sequence = (batch_size, config.history_frames+1, 3, height, width)
-    return {'model': [history, current], 'predictor': history, 'registration': sequence,
-            'gate': [sequence, (batch_size, 1, height, width),
-                     (batch_size, config.history_frames, height, width),
-                     (batch_size, config.history_frames, height, width), (batch_size, 8)]}[part]
+    return {'model': [history, current], 'predictor': history,
+            'registration': (batch_size, 2, 3, height, width)}[part]
 
 
 def export_graphs(output=ROOT/'output/st2/visualization', checkpoint=None, *,
@@ -123,7 +118,7 @@ def export_graphs(output=ROOT/'output/st2/visualization', checkpoint=None, *,
                'device': device, 'depth': depth, 'direction': direction,
                'expand_nested': expand_nested,
                'graphviz_dot': str(executable) if executable else None,
-               'graph_kind': 'model/registration: explicit schematic; predictor/gate: torchview forward trace',
+               'graph_kind': 'model/registration: explicit schematic; predictor: torchview forward trace',
                'parts': {}}
     write_json(run/'summary.json', summary)
     for name in PARTS if part == 'all' else (part,):
@@ -159,7 +154,7 @@ def export_graphs(output=ROOT/'output/st2/visualization', checkpoint=None, *,
             visual.node_attr.update(fontname='Times-Roman')
             visual.edge_attr.update(fontname='Times-Roman')
             kind = 'pipeline schematic' if name in ('model', 'registration') else 'torchview forward trace'
-            visual.graph_attr.update(label=f'ST2 v2 | {name} | {kind} | {height}x{width} | {record["parameters"]:,} parameters',
+            visual.graph_attr.update(label=f'ST2 v3 box-free | {name} | {kind} | {height}x{width} | {record["parameters"]:,} parameters',
                                      labelloc='t', fontname='Times-Roman', fontsize='18')
             dot_name = name+'.dot'
             (run/dot_name).write_text(visual.source, encoding='utf-8')

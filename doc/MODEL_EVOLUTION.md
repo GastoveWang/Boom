@@ -6,7 +6,7 @@
 
 ## 目前狀態（2026-10-28）
 
-目前 `src/st2/` 為ST² v2：保留Transformer Predictor／Gate，移除ST2Motion，背景補償統一使用凍結戶外LoFTR＋RANSAC相似變換。LoFTR含CNN，因此完整系統不再是純Transformer；Boom 維持 motion／YOLO 與原有執行、顯示、事件及定位流程。下文按日期保留早期模型與搬移紀錄，涉及的舊入口可能已刪除。
+目前 `src/st2/` 為ST² v3：使用者要求先不考慮框資訊，已移除Gate、框loss、ROI mask、依框取樣與框導出指標，保留Transformer Predictor＋凍結戶外LoFTR／RANSAC。只依整幀normal狀態訓練正常窗口；原始預測MSE與相鄰實際影格補償MSE分開輸出，沒有框注意力加權或融合煙霧信心。Boom原motion／YOLO、事件及定位維持原樣；下文按日期保留早期紀錄。
 
 2026-10-27 訓練輸出改為 `output/st2/<日期時間>/training/` 與同層 `inference/`，新增訓練成功結束的 `final.pt` 與完成摘要；每輪 `last.pt`、最佳 `best.pt`、log、TensorBoard、設定與指標集中於 training。此次只調整實驗保存方式，不改相對 ASTT 的架構、loss、訓練參數或權重格式，既有 ST² 權重可繼續載入／續訓，無須因此重訓。
 
@@ -16,12 +16,18 @@
 |---|---|---|
 | 空間／時間主幹 | STE → 每幀 CLS → TTE → CSA | 保留 patch 格點的交替空間視窗／時間注意力 |
 | 正常畫面解碼 | 融合向量＋CNN decoder | Transformer query decoder＋線性 RGB patches |
-| 背景運動與目標關注 | 核心模型無此兩分支 | 凍結LoFTR對應＋RANSAC幾何補償、有效遮罩／品質＋框監督關注 |
+| 背景運動與目標關注 | 核心模型無此兩分支 | 凍結LoFTR對應＋RANSAC幾何補償、有效遮罩／品質；無Gate或框監督 |
 | 模型狀態 | 歷史比較模型，程式在 benchmark/ASTT | 流程驗證完成，尚未正式30輪訓練或接入即時事件 |
 
 ST²保留下一幀預測的研究思路，但不是ASTT完整架構。操作見 [ST2.md](ST2.md)，完整歷史見 [MODEL_CHANGELOG.md](MODEL_CHANGELOG.md)。
 
-## 2026-10-28：以LoFTR＋RANSAC取代ST2Motion
+## 2026-10-28：先不使用框資訊（v3）
+
+相對原ASTT，仍使用正常歷史預測當前畫面的誤差，額外提供LoFTR／RANSAC背景補償後的實際相鄰影格差異。移除先前Gate與H=E×(0.05+0.95A)、BCE／Dice、ROI mask、正負平衡取樣、ROI IoU及框導出AUC；best.pt依最低正常驗證MSE選擇。資料不讀框座標／數量與target，缺框可訓練，既有標註不改動；仍依normal／roi／ignore整幀狀態僅選全正常窗口，不能稱為完全無標註。
+
+LoFTR每個模型窗口只計算最後歷史幀與當前幀一組配準；補償圖是實際影格差異，與Predictor誤差分開，並非warp預測圖，也未對齊Predictor歷史。補償分數只計有效像素，配準失敗為None／CSV空欄，不當作零。預設可訓練1,455,104、凍結11,561,456、總13,016,560參數。舊v1／v2完整權重拒絕，需要重新訓練；資料、模型原檔與歷史輸出保留。已驗證資料不依賴框、MSE-only反向、實際正常資料小規模訓練／續訓／推論及預設解析度前向；未證明煙霧效果改善。舊v2詳見[歷史快照](history/ST2_V2.md)。
+
+## 2026-10-28：以LoFTR＋RANSAC取代ST2Motion（v2歷史）
 
 相對原ASTT，仍保留正常下一幀預測與誤差定位思路，額外使用框監督Gate挑選煙霧候選。此次移除可學運動分支及其背景loss／正則，改由預訓練LoFTR找對應、RANSAC估計相似矩陣，再warp取得殘差；Gate新增有效遮罩與八項品質。Predictor、原始MSE基底與H=E×(0.05+0.95A)不變，沒有因而對齊Predictor歷史或宣稱視差已解決。完整新權重含凍結LoFTR，舊ST² v1不能直接載入／續訓，需要重新訓練。已完成受控位移、梯度、checkpoint與小規模訓練／續訓／推論驗證；尚未證明煙霧效能或即時FPS提升。操作與設定見[ST²](ST2.md)，舊三分支快照見[ST² v1](history/ST2_V1.md)。
 

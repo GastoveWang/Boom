@@ -407,7 +407,7 @@ def export_dataset(project, output_parent=DATASET_ROOT, name='st2', ratios=(7., 
 labels.npy：1=關注區域、0=區段外的無目標影格、-1=略過。略過影格不進入訓練窗口。
 frames.jsonl 的 roi_xyxy 是相對原圖 [0,1] 座標；samples.jsonl 的 target.boxes 是 cxcywh。
 框代表使用者關注區域，不代表物體類別；target.labels 固定 0，供單一區域的框監督使用。
-ST2 trainer 從 roi_xyxy 框聯集建立各幀 attention mask。
+ST2 v3 trainer 不使用框資訊；只依整幀 normal 狀態選擇正常訓練窗口。框保留供未來研究。
 所有來源依群組分配 train／val，沒有獨立 test。本版本完整保留正常歷史 context。
 ST2 訓練入口：python src/st2 train --data <本資料集路徑>。
 詳見 doc/ST2.md。不要把此格式當成 ASTT 原版資料。

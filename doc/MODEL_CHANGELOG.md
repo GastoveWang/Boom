@@ -1,5 +1,17 @@
 # 模型與推論變更紀錄
 
+## 2026-10-28 — ST² v3：先不使用框資訊
+
+- 需求：使用者要求「先不要考慮框的資訊」。訓練／推論停用框監督與Gate；既有框標註、資料、模型及輸出保留，方便後續研究。
+- 修改前→後：移除ST2Gate、ROI mask、balanced BCE／Dice、gate_floor與H=E×(0.05+0.95A)；只保留正常Predictor＋凍結LoFTR／RANSAC。移除框正負取樣、positive_fraction、ROI IoU與框導出frame AUC；只用全normal窗口，best.pt依最低正常val reconstruction MSE。不是完全無標註，仍使用整幀normal／roi／ignore狀態，不將煙霧窗口當正常訓練。
+- 檔案／參數：`models/network.py`／`transformer.py`、`data/dataset.py`／`sequence.py`、`models/motion.py`、`common/utils.py`、train／infer／runtime／view／visualize及文件。`ST2Dataset`不讀sample.target、ROI座標或框數；fingerprint亦排除框欄位，取消class-balanced subset。相機增強保留0.5，同步影像但無mask。LoFTR匹配／RANSAC品質門檻不變；無Gate後每窗口僅配準最後歷史／當前一對，避免8組無用匹配。
+- 分數／顯示：原始預測raw_mse與補償後compensated_mse分開。後者是warp前一張實際影格與當前實際影格的MSE，不是warp Predictor輸出，也未對齊Predictor歷史。補償score取有效像素top0.1%，配準失敗輸出None／CSV空欄、畫面不可用與曲線缺口；無效邊界顯示原圖，不能把失敗當零變化。移除attention／weighted_mse欄位，新增compensated_valid及raw_score_01；固定對數尺度仍保留，舊加權分數門檻不能直接沿用。補償殘差不是煙霧機率或確認事件。
+- 權重／重訓：版本`st2.v3.0-box-free`；容器仍`st2.checkpoint.v1`，以supervision=normal-frames-only辨識。拒絕舊v1／v2 Gate權重，需要重新訓練，不做靜默遷移。完整新權重含凍結LoFTR，續訓／推論不需外部檔案。預設總參數13,016,560，可訓練Predictor1,455,104、凍結LoFTR11,561,456。
+- 驗證：tmp合成來源分組／連續窗口夾具，缺target與不合法框欄位均可載入、只保留正常窗口、框變更不影響fingerprint。無Gate／attention／weighted_mse輸出、loss逐值等於raw_mse.mean、Predictor梯度／AdamW更新、LoFTR無梯度且eval、單對矩陣shape、checkpoint往返、Predictor因果性與舊Gate權重拒絕通過；無有效像素top_score=None、有效top-score不納入無效高值。
+- 流程驗證：CUDA、實際train／val各4正常窗口、64×96、batch2、embedding32／patch8／layers1／window3，完成1輪並新run續訓到第2輪；兩次真實影片自動推論10幀，核對8幀暖機、無ROI指標／CSV欄位、MP4解碼、Runtime空白影格score=None與跳號重置。獨立CPU推論、可選guard、無框NPZ與新版渲染通過，並檢視輸出畫面。預設768×576實際正常窗口前向通過，最新一對配準accepted。預設尺寸三張圖匯出通過；model／registration為明示流程圖，Predictor為實際torchview追蹤。
+- 輸出：驗證程式、合成資料、微型訓練／續訓、checkpoint、影片與圖在`tmp/st2_box_free_20261028/`，完成後清理；正式文件新圖為`doc/diagrams/ST2_V3_*.svg`。v1／v2圖與說明保留歷史，當前方法見`doc/ST2.md`。舊資料與輸出不移動、不覆寫。
+- 執行：已有LoFTR權重時`python train_st2.py`；必要依賴`python -m pip install -e ".[st2]"`。未啟動正式30輪，未驗證煙霧誤報／漏報、延遲、FPS或定位誤差改善。
+
 ## 2026-10-28 — ST² v2：移除ST2Motion，改用LoFTR＋RANSAC
 
 - 需求：先推送現況，再以原有Predictor／Gate加LoFTR＋RANSAC取代ST2Motion，完成驗證後再推送；修改前保存版本為dev `7540edf`。不更新master，不改寫歷史。

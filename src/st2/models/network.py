@@ -3,7 +3,6 @@ from dataclasses import dataclass
 import math
 import torch
 from torch import nn
-from torch.nn import functional as F
 
 
 @dataclass(frozen=True)
@@ -12,11 +11,11 @@ class ST2Config:
     embedding_dim: int = 128
     num_heads: int = 4
     dropout: float = .1
-    gate_floor: float = .05
     variant: str = 'transformer'
     patch_size: int = 16
     transformer_layers: int = 2
     window_size: int = 6
+    supervision: str = 'normal-frames-only'
     registration_backend: str = 'loftr-ransac'
     registration_max_side: int = 320
     registration_confidence: float = .2
@@ -29,8 +28,10 @@ class ST2Config:
 
     @classmethod
     def from_checkpoint(cls, values):
+        if values.get('supervision') != 'normal-frames-only':
+            raise ValueError('Requires box-free ST2 v3 weights; earlier Gate checkpoints require retraining')
         if values.get('registration_backend') != 'loftr-ransac':
-            raise ValueError('This version requires ST2 v2 LoFTR+RANSAC weights; legacy ST2Motion checkpoints require retraining')
+            raise ValueError('Requires LoFTR+RANSAC registration; legacy ST2Motion checkpoints require retraining')
         if values.get('variant') != 'transformer':
             raise ValueError('Historical baseline/camera-aware models were removed; use an ST2 Transformer checkpoint')
         return cls(**values)
@@ -42,8 +43,8 @@ class ST2Config:
             raise ValueError('Embedding must be divisible by four and num_heads')
         if not math.isfinite(self.dropout) or not 0 <= self.dropout < 1:
             raise ValueError('dropout must be in [0,1)')
-        if not math.isfinite(self.gate_floor) or not 0 <= self.gate_floor < 1:
-            raise ValueError('gate_floor must be in [0,1)')
+        if self.supervision != 'normal-frames-only':
+            raise ValueError('Only frame-level normal training without boxes is supported')
         if self.variant != 'transformer':
             raise ValueError('Only the current ST2 Transformer architecture is supported')
         if self.registration_backend != 'loftr-ransac':
@@ -67,7 +68,7 @@ class ST2Config:
 
     @property
     def model_version(self):
-        return 'st2.v2.0-loftr-ransac'
+        return 'st2.v3.0-box-free'
 
     @property
     def model_name(self):
@@ -75,7 +76,7 @@ class ST2Config:
 
     @property
     def model_display_name(self):
-        return 'Smoke-Targeted Spatiotemporal Transformer + LoFTR/RANSAC (ST² v2.0)'
+        return 'Spatiotemporal Predictor + LoFTR/RANSAC (ST² v3, box-free)'
 
     def validate_image_size(self, height, width):
         divisor = self.patch_size
@@ -86,12 +87,11 @@ class ST2Config:
 class ST2Model(nn.Module):
     def __init__(self, config=None):
         super().__init__()
-        from st2.models.transformer import ST2Predictor, ST2Gate
+        from st2.models.transformer import ST2Predictor
         from st2.models.registration import LoFTRRegistration
         self.config = config or ST2Config()
         self.predictor = ST2Predictor(self.config)
         self.registration = LoFTRRegistration(self.config)
-        self.gate = ST2Gate(self.config)
 
     def forward(self, history, current):
         if history.ndim != 5 or current.shape != (history.shape[0], 3, *history.shape[-2:]):
@@ -99,51 +99,15 @@ class ST2Model(nn.Module):
         self.config.validate_image_size(*history.shape[-2:])
         predicted = self.predictor(history)
         raw_mse = (predicted - current).square().mean(1, keepdim=True)
-        sequence = torch.cat((history, current[:, None]), 1).detach()
+        sequence = torch.stack((history[:, -1], current), 1).detach()
         registration = self.registration(sequence)
-        statistics = registration['registration_quality'].mean(1)
-        logits = self.gate(sequence, raw_mse.detach(), registration['registration_mse'],
-                           registration['registration_valid'], statistics)
-        attention = logits.sigmoid()
-        weighted_mse = raw_mse.detach() * (self.config.gate_floor + (1-self.config.gate_floor)*attention)
-        return {'predicted': predicted, 'raw_mse': raw_mse, 'gate_logits': logits,
-                'attention': attention, 'weighted_mse': weighted_mse, **registration}
+        return {'predicted': predicted, 'raw_mse': raw_mse,
+                'compensated_mse': registration['registration_mse'][:, -1:],
+                'compensated_valid': registration['registration_valid'][:, -1:], **registration}
 
 
 class ST2Criterion(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, outputs, mask, normal_eligible, sequence_masks=None):
-        logits = outputs['gate_logits']
-        if mask.shape != logits.shape or normal_eligible.shape != (len(mask),):
-            raise ValueError('Mask and normal eligibility shapes must match outputs')
-        if not torch.isfinite(mask).all() or ((mask != 0) & (mask != 1)).any():
-            raise ValueError('ROI masks must be binary and finite')
-        if normal_eligible.dtype != torch.bool:
-            raise ValueError('Normal eligibility must be boolean')
-        # Normalize positive and negative pixels separately: tiny ROI supervision
-        # must not disappear into hundreds of thousands of background pixels.
-        pixel_bce = F.binary_cross_entropy_with_logits(logits, mask, reduction='none')
-        positive_count, negative_count = mask.sum(), (1 - mask).sum()
-        positive_bce = (pixel_bce * mask).sum() / positive_count.clamp(min=1)
-        negative_bce = (pixel_bce * (1 - mask)).sum() / negative_count.clamp(min=1)
-        active = (positive_count > 0).to(logits.dtype) + (negative_count > 0).to(logits.dtype)
-        balanced_bce = (positive_bce + negative_bce) / active.clamp(min=1)
-        positive_images = mask.flatten(1).sum(1) > 0
-        if (normal_eligible & positive_images).any():
-            raise ValueError('A target ROI frame cannot be eligible for normal-only prediction training')
-        if positive_images.any():
-            p = outputs['attention'][positive_images].flatten(1)
-            y = mask[positive_images].flatten(1)
-            dice = (1 - (2 * (p * y).sum(1) + 1e-6) / (p.sum(1) + y.sum(1) + 1e-6)).mean()
-        else:
-            dice = logits.sum() * 0
-        if normal_eligible.any():
-            reconstruction = outputs['raw_mse'][normal_eligible].mean()
-        else:
-            reconstruction = outputs['raw_mse'].sum() * 0
-        gate_loss = balanced_bce + dice
-        return {'loss': reconstruction + gate_loss,
-                'reconstruction': reconstruction, 'gate_loss': gate_loss, 'balanced_bce': balanced_bce,
-                'dice_loss': dice}
+    """Normal-frame prediction MSE only; no boxes, masks or Gate supervision."""
+    def forward(self, outputs):
+        reconstruction = outputs['raw_mse'].mean()
+        return {'loss': reconstruction, 'reconstruction': reconstruction}

@@ -4,6 +4,7 @@
 
 | 文件 | 用途 |
 |---|---|
+| [ST² v2](ST2_V2.md) | LoFTR／RANSAC＋框監督Gate版本，v3已停用框資訊 |
 | [ST² v1](ST2_V1.md) | 替換LoFTR前的三分支架構、背景loss及驗證快照 |
 | [BBox 時序模型](BBOX_TEMPORAL_MODEL.md) | 已移除的直接框回歸架構 |
 | [BBox 訓練](ASTT_BBOX_TRAINING.md) | 舊訓練方法與實驗設定 |

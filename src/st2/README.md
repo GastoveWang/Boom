@@ -1,4 +1,4 @@
-> 2026-10-28：現行為ST² v2＋LoFTR/RANSAC，無ST2Motion；首次訓練先執行 `python src/st2 download-weights`。舊權重需重訓，詳見 [現行方法](../../doc/ST2.md)。
+> 2026-10-28：現行為ST² v3無框資訊：Predictor＋LoFTR/RANSAC，無Gate或ST2Motion；首次訓練先執行 `python src/st2 download-weights`。舊權重需重訓，詳見 [現行方法](../../doc/ST2.md)。
 
 # ST² 模型、資料與訓練套件
 
@@ -29,11 +29,11 @@ src/st2/
   cli/                  # train、infer、prepare、download_weights、visualize等
   models/
     network.py          # ST2Config、ST2Model、ST2Criterion
-    transformer.py      # Predictor／Gate
+    transformer.py      # Predictor（無Gate）
     registration.py     # 凍結 LoFTR＋RANSAC
     motion.py           # 訓練用相機軌跡增強
   data/
-    dataset.py          # 8幀歷史＋當前影格與9幀ROI mask
+    dataset.py          # 正常9幀窗口，不讀框／ROI mask
     sequence.py         # 來源分組、連續窗口與fingerprint
     annotations.py      # 逐幀標註與資料集匯出
     editor.py           # 影片標註UI
@@ -48,7 +48,7 @@ src/st2/
     utils.py            # 前處理、checkpoint、JSON與抽樣
 ```
 
-`ST2Runtime`位於`engine/runtime.py`，只回傳熱圖與分數，不確認煙霧事件；未來由Boom adapter接入原有顯示／事件流程。v2的Gate輸入與state_dict已改變，舊權重需重訓；既有資料／輸出路徑不變。
+`ST2Runtime`位於`engine/runtime.py`，只回傳熱圖與分數，不確認煙霧事件；未來由Boom adapter接入原有顯示／事件流程。v3移除Gate，舊權重需重訓；既有資料／輸出路徑不變。
 
 完整說明見[模型文件](../../doc/ST2.md)、[資料集文件](../../doc/ST2_DATASET.md)、[專案結構](../../doc/PROJECT_STRUCTURE.md)。
 

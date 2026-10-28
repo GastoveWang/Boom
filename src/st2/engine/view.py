@@ -1,20 +1,21 @@
-"""Original/MSE/target-weighted overlay panels and causal score curves."""
+"""Original/prediction/compensated residual panels and causal score curves."""
 import cv2
 import numpy as np
 
 
-def render_st2(frame, raw, weighted, scores, index, fps, maximum=.02, *,
-                       motion_status=None, normalized=False, raw_values=None, model_name='ST2'):
+def render_st2(frame, raw, compensated, scores, index, fps, maximum=.02, *,
+                       motion_status=None, normalized=False, raw_values=None, model_name='ST2',
+                       compensated_valid=None):
     canvas = np.full((900, 1920, 3), (25, 22, 19), dtype=np.uint8)
 
     def text(value, xy, color=(235, 235, 235), scale=.65):
         cv2.putText(canvas, value, xy, cv2.FONT_HERSHEY_SIMPLEX, scale, color, 1, cv2.LINE_AA)
 
-    state = 'warming up' if raw is None else 'scored: learned ROI weighting'
+    state = 'warming up' if raw is None else 'scored'
     if raw is not None and scores and scores[-1][2] is None:
-        state = 'CAMERA MOTION: target score unavailable'
-    text(f'{model_name} | Target-change heatmap | Frame {index + 1} | {index / fps:.2f}s | {state}', (20, 30), scale=.85)
-    text(f'Fixed MSE color range: 0 - {maximum:g} | Input RGB [0,1] | Weighted map is not raw MSE', (20, 60))
+        state = 'REGISTRATION UNCERTAIN: compensated score unavailable'
+    text(f'{model_name} | Change diagnostics | Frame {index + 1} | {index / fps:.2f}s | {state}', (20, 30), scale=.85)
+    text(f'Fixed MSE color range: 0 - {maximum:g} | Prediction error and motion-compensated changes', (20, 60))
     h, w = frame.shape[:2]
     factor = min(608 / w, 420 / h)
     size = (max(1, round(w * factor)), max(1, round(h * factor)))
@@ -25,14 +26,18 @@ def render_st2(frame, raw, weighted, scores, index, fps, maximum=.02, *,
                                            cv2.COLORMAP_JET), size)
 
     panels = [original, colored(raw) if raw is not None else None,
-              cv2.addWeighted(original, .55, colored(weighted), .45, 0) if weighted is not None else None]
-    target_title = 'Target-weighted MSE overlay' if motion_status in (None, 'off') else 'Target MSE + motion check'
+              cv2.addWeighted(original, .55, colored(compensated), .45, 0) if compensated is not None else None]
+    if panels[2] is not None and compensated_valid is not None:
+        valid = cv2.resize(compensated_valid.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST).astype(bool)
+        panels[2] = np.where(valid[..., None], panels[2], original)
+    target_title = 'LoFTR/RANSAC residual overlay'
     for column, (title, panel) in enumerate(zip(('Original video', 'Raw prediction MSE', target_title), panels)):
         x = 640 * column
         cv2.rectangle(canvas, (x + 8, 76), (x + 632, 582), (55, 52, 47), 1)
         text(title, (x + 18, 106), scale=.8)
         if panel is None:
-            text('Waiting for 8 past frames', (x + 90, 330))
+            message = 'Warming up history' if raw is None else 'Registration unavailable'
+            text(message, (x + 90, 330))
         else:
             left, top = x + 16 + (608 - size[0]) // 2, 124 + (420 - size[1]) // 2
             canvas[top:top + size[1], left:left + size[0]] = panel
@@ -41,8 +46,8 @@ def render_st2(frame, raw, weighted, scores, index, fps, maximum=.02, *,
             canvas[560:572, x + 150:x + 470] = cv2.applyColorMap(ramp, cv2.COLORMAP_JET)
             text('0', (x + 120, 572))
             text(f'{maximum:g}+', (x + 480, 572))
-    title = ('Normalized score 0.00-1.00 | raw (gray), target (yellow) | gaps = unavailable, not zero'
-             if normalized else 'Top 0.1% pixel mean | last 10 seconds | raw MSE (gray), weighted MSE (yellow)')
+    title = ('Normalized score 0.00-1.00 | raw (gray), compensated (yellow) | gaps = unavailable, not zero'
+             if normalized else 'Top 0.1% pixel mean | last 10 seconds | raw MSE (gray), compensated residual (yellow)')
     text(title, (20, 620))
     valid = [v for _, a, b in scores for v in (a, b) if v is not None]
     ymax = 1. if normalized else max(.001, max(valid, default=0.) * 1.15)
@@ -69,9 +74,10 @@ def render_st2(frame, raw, weighted, scores, index, fps, maximum=.02, *,
         target = scores[-1][2]
         target_text = 'N/A' if target is None else (f'{target:.2f}' if normalized else f'{target:.6f}')
         if normalized:
-            text(f'Current score: raw={scores[-1][1]:.2f}, target={target_text} | {motion_status} | Not a probability', (20, 875))
+            text(f'Current score: raw={scores[-1][1]:.2f}, compensated={target_text} | {motion_status} | Not a probability', (20, 875))
             if raw_values and raw_values[0] is not None:
-                text(f'Original MSE top scores: raw={raw_values[0]:.6f}, learned-weighted={raw_values[1]:.6f}', (20, 895), scale=.55)
+                value = 'N/A' if raw_values[1] is None else f'{raw_values[1]:.6f}'
+                text(f'Top scores: prediction={raw_values[0]:.6f}, compensated={value}', (20, 895), scale=.55)
         else:
-            text(f'Current raw={scores[-1][1]:.6f}, target-weighted={target_text}', (20, 882))
+            text(f'Current raw={scores[-1][1]:.6f}, compensated={target_text}', (20, 882))
     return canvas

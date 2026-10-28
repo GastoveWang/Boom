@@ -6,6 +6,14 @@ import cv2
 import numpy as np
 
 
+def top_score(values, valid=None):
+    flat = values.reshape(-1) if valid is None else values[valid]
+    if not len(flat):
+        return None
+    k = max(1, math.ceil(len(flat) * .001))
+    return float(np.partition(flat, len(flat) - k)[-k:].mean())
+
+
 @dataclass(frozen=True)
 class ScoreNormalizer:
     maximum: float = .02
@@ -18,7 +26,7 @@ class ScoreNormalizer:
     def __call__(self, score):
         if not math.isfinite(score) or score < 0:
             raise ValueError('MSE scores must be nonnegative and finite')
-        # Same mapping for raw/weighted/final scores and every video. Not a probability.
+        # Same mapping for raw/compensated scores and every video. Not a probability.
         return float(np.clip(math.log1p(score / self.knee) / math.log1p(self.maximum / self.knee), 0, 1))
 
 
