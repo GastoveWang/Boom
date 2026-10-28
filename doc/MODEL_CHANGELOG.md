@@ -1,5 +1,15 @@
 # 模型與推論變更紀錄
 
+## 2026-10-28 — 新增 HSTforU 比較套件
+
+- 需求：將指定的官方 HSTforU repo 放進 benchmark，先整理獨立套件並說明與目前 ST² 的差異，不接資料或啟動訓練。
+- 修改前後：新增 `benchmark/HSTforU/origin/` 官方完整工作樹與 `UPSTREAM.json`（commit `9548473306bbb89895b077275e8503de79653029`、321 檔 SHA-256）；`src/hstforu/` 複製模型／必要 helpers，僅修改套件匯入命名空間，加入 Ped2／Avenue API、doctor、forward 及嚴格 checkpoint 載入。官方 forward、loss、設定與分數不變；ST² 模型及推論未改動。
+- 檔案／參數：`benchmark/HSTforU/pyproject.toml`、`src/hstforu/`、README、`doc/HSTFORU_COMPARISON.md`、文件導覽及 dev 的 benchmark 忽略例外。模型固定 4 張歷史；依賴 timm0.6.13／MMCV1.7.2；沒有新增煙霧門檻。
+- 權重與重訓：兩個模型家族不相容，不能把 ST² 權重套入 HSTforU。封裝不改官方 state_dict 鍵，不需因封裝重訓；尚未取得官方訓練權重驗證。ST² 既有權重不變。
+- 驗證：CPU、batch1、四張256×256，Ped2／Avenue 前向皆輸出有限的 `[1,3,256,256]`；實測參數137,615,680／148,969,536。Ped2 官方／封裝相同種子下輸出逐值一致且 state_dict 鍵一致；ST² 預設參數實測3,587,204。官方321檔SHA-256一致，套件 wheel 建置成功。
+- 輸出位置：驗證及暫時依賴均在 `tmp/hstforu_setup_20261028/`，完成後清理；長期產物是套件及比較文件。未修改現有 Python 環境，未訓練、未量測煙霧準確率／FPS／定位誤差。
+- 指令：先依 `benchmark/HSTforU/README.md` 建立獨立環境並安裝，再執行 `python -m hstforu doctor`、`python -m hstforu forward --variant ped2 --device cpu`。完整原版訓練／AUC 評估流程尚未驗證，不能把前向通過當成效能重現。
+
 > 本檔依時間保留完整歷史；舊指令與路徑不一定仍可執行。目前操作請看 [ST²](ST2.md)，舊方法文件已歸入 [history](history/README.md)。
 
 後續每次修改模型、loss、資料解讀、訓練參數、分數、門檻或推論顯示，都在本檔新增一筆，不覆寫舊紀錄。每筆包含：日期／版本、需求、修改前後、涉及檔案、權重／資料相容性、執行指令、驗證與尚未確定的效果。相對原 ASTT 的完整比較見 [MODEL_EVOLUTION.md](MODEL_EVOLUTION.md)。
@@ -218,3 +228,11 @@
 - 需求：核對根目錄 models 新增子資料夾後的模型路徑。原 EDM 預設指向 pretrained 根目錄、YOLO 訓練工具下載位置也在根目錄；現分別指向 `models/pretrained/map_matching/` 與 `models/pretrained/detector/`，YOLO 遞迴搜尋既有權重維持不變。修正 YOLO 匯出函式獨立使用時的預設 checkpoints 路徑為專案根目錄下 `models/checkpoints/`。
 - 檔案／參數：`configs/matching.yaml`、`src/boom/config/defaults.py`、`tools/train_yolo.py` 與相關文件；兩個新目錄各加入 `.gitkeep`。沒有改動模型、loss、偵測參數、權重內容或格式，不需重訓；既有自訂路徑可繼續指定。
 - 驗證：讀取合併設定並檢查實際檔案，使用 CPU ONNX Runtime 載入 EDM 與預設 YOLO ONNX，確認 YOLO 訓練工具能找到 detector 子目錄的權重；未執行完整訓練或影片偵測。原模型與輸出保留原地，模型檔仍受 Git 忽略。
+
+## 2026-10-28 — 訓練後推論移除多餘目錄
+
+- 需求：訓練後的 `inference/` 直接放各影片結果，不再多一層 `st2_inference_<時間>_<ID>/`。
+- 修改前後：自動推論各影片資料夾改為 `output/st2/<日期時間>/inference/001_<影片名稱>/` 等，權重快照、推論摘要與進度也移到 inference 根目錄；訓練 pipeline 記錄該實際路徑。直接輸出時若目錄非空會拒絕執行，避免覆蓋。獨立推論仍建立獨立的時間／ID 目錄。
+- 檔案／參數：`src/st2/engine/infer.py` 新增內部 `direct_output` 選項、`src/st2/engine/train.py` 啟用，以及 `doc/ST2.md`、`doc/PROJECT_STRUCTURE.md`、`doc/MODEL_EVOLUTION.md`。模型、loss、訓練參數、分數、顯示、checkpoint 格式與影片輸出內容不變；既有權重相容，無須重訓，舊輸出不移動。
+- 驗證：以實際 train／val 各 16 窗口、CPU、64×96、batch 2 完成一輪，接著對真實影片推論 10 幀，核對影片目錄直接位於 inference、MP4／CSV、摘要／權重快照及 pipeline 路徑；確認非空目錄被拒絕且內容未變、獨立推論維持原有子目錄。驗證輸出位於 `tmp/st2_direct_check_20261028/`，完成後清理；不據此宣稱辨識效果改善。
+- 指令：`python train_st2.py`。

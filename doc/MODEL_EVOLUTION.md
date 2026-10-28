@@ -1,5 +1,7 @@
 # ST² 與 ASTT 的架構差異及模型演進
 
+2026-10-28 新增獨立比較套件 `benchmark/HSTforU/`，固定官方 commit `9548473306bbb89895b077275e8503de79653029`，保留完整快照並包裝 Ped2／Avenue 模型。此次沒有修改 ST² 架構、loss、訓練／推論設定或既有權重，也沒有以 HSTforU 取代 ST²。與 HSTforU 的差異及驗證邊界另見 [HSTforU 比較](HSTFORU_COMPARISON.md)。
+
 本頁用於回答「目前模型相對原本模型改了什麼」。後續逐次修改見 [MODEL_CHANGELOG.md](MODEL_CHANGELOG.md)；目前使用方式見 [ST²](ST2.md)。記錄以實際原始碼、run 設定及輸出為準，不將推測寫成實驗結論。
 
 ## 目前狀態（2026-10-27）
@@ -7,6 +9,8 @@
 目前只保留 `src/st2/` 的純 Transformer ST²；Boom 維持 motion／YOLO 與原有執行、顯示、事件及定位流程。下文按日期保留早期模型與搬移紀錄，涉及的舊入口可能已刪除。
 
 2026-10-27 訓練輸出改為 `output/st2/<日期時間>/training/` 與同層 `inference/`，新增訓練成功結束的 `final.pt` 與完成摘要；每輪 `last.pt`、最佳 `best.pt`、log、TensorBoard、設定與指標集中於 training。此次只調整實驗保存方式，不改相對 ASTT 的架構、loss、訓練參數或權重格式，既有 ST² 權重可繼續載入／續訓，無須因此重訓。
+
+2026-10-28 訓練後自動推論改為各影片目錄直接位於該次的 `inference/`，移除中間一層推論 run 目錄；模型、推論運算與相對 ASTT 的架構差異不變。
 
 | 項目 | 本機 ASTT 比較模型 | 目前 ST² |
 |---|---|---|

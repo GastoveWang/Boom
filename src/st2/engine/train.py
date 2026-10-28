@@ -369,7 +369,8 @@ def main(argv=None, *, default_infer_source=None):
             write_json(run / 'pipeline.json', {'stage': 'inference', 'completed_epochs': args.epochs,
                                                'infer_source': saved_args['infer_source'], 'checkpoint': str(run/'best.pt')})
             result, status = run_inference(run/'best.pt', args.infer_source, experiment/'inference',
-                                            args.device, args.batch_size, args.heatmap_max, args.inference_max_frames)
+                                            args.device, args.batch_size, args.heatmap_max, args.inference_max_frames,
+                                            direct_output=True)
             write_json(run / 'pipeline.json', {'stage': status, 'completed_epochs': args.epochs,
                                                'inference_output': str(result), 'checkpoint': str(run/'best.pt')})
             return 1 if status == 'failed' else 0

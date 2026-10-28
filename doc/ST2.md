@@ -132,8 +132,14 @@ output/st2/20261027_153000_123456/
 │   ├── pipeline.json    # 訓練／推論流程狀態
 │   └── summary.json     # 完成輪次、最後指標與權重位置
 └── inference/
-    └── st2_inference_<時間>_<ID>/  # 原有影片、CSV、摘要及權重快照
+    ├── checkpoint.pt     # 本次推論使用的權重快照
+    ├── summary.json      # 所有影片的推論摘要
+    ├── progress.json     # 推論進度
+    ├── 001_影片名稱/     # 影片、CSV 及該影片摘要
+    └── 002_影片名稱/
 ```
+
+訓練後自動推論的影片資料夾直接位於 `inference/`。獨立執行 `python src/st2 infer` 時，仍在指定輸出目錄建立獨立的 `st2_inference_<時間>_<ID>/`，避免覆寫已有推論。
 
 `final.pt` 與完成當下的 `last.pt` 保存同一輪模型；前者表示訓練成功結束，後者每輪更新。訓練失敗或中斷時不產生 `final.pt`；`last.pt` 保留最近成功保存的一輪。訓練完成後，即使後續推論失敗仍保留 final.pt。`best.pt` 可能來自較早的輪次。續訓會建立新的日期時間資料夾，也接受舊輸出中的權重路徑。未指定推論來源時 inference 目錄留空；根目錄入口仍預設完成後推論 0603 影片。`--no-tensorboard` 可停用 TensorBoard。
 

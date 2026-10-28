@@ -36,6 +36,8 @@
 ## 比較模型、研究與歷史
 
 - [ASTT 快速使用](../benchmark/ASTT/doc/START_HERE.md)
+- [HSTforU 套件與驗證](../benchmark/HSTforU/README.md)
+- [HSTforU 與目前 ST² 的差異](HSTFORU_COMPARISON.md)
 - [ASTT 資料準備](../benchmark/ASTT/doc/DATASET_PREPARATION.md)
 - [論文研究索引](research/README.md)
 - [歷史方法、搬移與盤點紀錄](history/README.md)

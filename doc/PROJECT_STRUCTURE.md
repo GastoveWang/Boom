@@ -21,6 +21,8 @@ Boom/
 ├── configs/                        # 分類設定（見 configs/README.md）
 ├── doc/                            # Boom 文件
 ├── benchmark/                      # 碩論比較用的其他專案
+│   ├── ASTT/                       # ASTT 比較模型
+│   └── HSTforU/                    # 官方快照 origin＋獨立 hstforu 套件
 ├── src/boom/
 │   ├── detection/
 │   │   ├── optical_flow/           # Motion 偵測器
@@ -93,7 +95,7 @@ src/st2/
     utils.py            # 前處理、checkpoint、JSON與抽樣
 ```
 
-目前資料為 `data/st2/st2_v1/`；新訓練輸出 `output/st2/<日期時間>/training/`，自動推論位於同一日期時間資料夾的`inference/st2_inference_<時間>_<ID>/`。獨立推論預設 `output/st2/inference/`。標註新匯出為 `data/st2/st2_vN/`。
+目前資料為 `data/st2/st2_v1/`；新訓練輸出 `output/st2/<日期時間>/training/`，自動推論的各影片目錄直接位於同一日期時間資料夾的 `inference/`。獨立推論預設 `output/st2/inference/`，仍建立獨立 run 目錄。標註新匯出為 `data/st2/st2_vN/`。
 
 `data/astt_bbox`與`output/astt_bbox`已依使用者要求更名，檔案內容保留；原smoke_heatmap/roi_heatmap歷史run不移動、不改寫。舊Smoke Heatmap工具、匯入轉接及舊研究網路均已移除，統一使用ST²入口。移動清單見 [ST2_MIGRATION.md](history/ST2_MIGRATION.md)。
 

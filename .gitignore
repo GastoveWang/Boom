@@ -12,6 +12,11 @@
 !/benchmark/.gitkeep
 !/benchmark/ASTT/
 /benchmark/ASTT/.git/
+!/benchmark/HSTforU/
+/benchmark/HSTforU/.upstream-git/
+/benchmark/HSTforU/.git/
+/benchmark/HSTforU/data/
+/benchmark/HSTforU/output/
 
 # Test directories (Do not upload)
 /test/

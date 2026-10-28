@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools==69.5.1", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "boom-benchmark-hstforu"
+version = "0.1.0"
+description = "Pinned official HSTforU model packaged for Boom benchmarks"
+requires-python = ">=3.10"
+dependencies = [
+  "torch", "torchvision", "numpy", "Pillow", "PyYAML",
+  "timm==0.6.13", "mmcv==1.7.2", "einops", "setuptools==69.5.1",
+]
+
+[project.scripts]
+hstforu = "hstforu.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -166,7 +166,8 @@ def infer_one(source, directory, model, height, width, args, device, progress_pa
 
 def run_inference(checkpoint, source, output, device='auto', batch_size=4, heatmap_max=.02,
                   max_frames=0, save_heatmaps=False, score_max=.02, score_knee=.0001, motion_mode='off',
-                  motion_rotation_limit=60., motion_translation_limit=.75, motion_residual_floor=.015):
+                  motion_rotation_limit=60., motion_translation_limit=.75, motion_residual_floor=.015,
+                  *, direct_output=False):
     import torch
     from st2.models.network import ST2Config, ST2Model
     if batch_size < 1 or max_frames < 0 or not math.isfinite(heatmap_max) or heatmap_max <= 0:
@@ -183,8 +184,13 @@ def run_inference(checkpoint, source, output, device='auto', batch_size=4, heatm
         raise ValueError('No supported videos at inference source')
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
-    run = output / f'st2_inference_{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:8]}'
-    run.mkdir(exist_ok=False)
+    if direct_output:
+        if any(output.iterdir()):
+            raise FileExistsError(f'Inference output directory is not empty: {output}')
+        run = output
+    else:
+        run = output / f'st2_inference_{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:8]}'
+        run.mkdir(exist_ok=False)
     snapshot = run / 'checkpoint.pt'
     checkpoint = Path(checkpoint).resolve()
     shutil.copyfile(checkpoint, snapshot)
