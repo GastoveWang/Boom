@@ -1,6 +1,6 @@
-"""ST2: Smoke-Targeted Spatiotemporal Transformer (ST² v1.0).
+"""ST2 v2: Transformer predictor and gate with external LoFTR/RANSAC registration.
 
-All learned image processing uses linear patch projections and attention.
+Predictor and gate use linear patch projections and attention; registration is external.
 Warping, patch assembly and the final MSE weighting remain explicit operations.
 """
 import math
@@ -8,8 +8,6 @@ import math
 import torch
 from torch import nn
 from torch.nn import functional as F
-
-from st2.models.motion import similarity_matrix, warp_images
 
 
 def spatial_positions(height, width, dim, reference):
@@ -138,66 +136,16 @@ class ST2Predictor(nn.Module):
         return (history[:, -1] + .25 * delta.tanh()).clamp(0, 1)
 
 
-class PairMotionEncoder(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        # Motion estimation uses 64x80 pair images; 8px patches give 80 tokens.
-        self.embedding = PatchEmbedding(6, config.embedding_dim, 8)
-        self.token = nn.Parameter(torch.zeros(1, 1, config.embedding_dim))
-        self.encoder = nn.TransformerEncoder(encoder_layer(config), 2,
-                                             norm=nn.LayerNorm(config.embedding_dim),
-                                             enable_nested_tensor=False)
-
-    def forward(self, pairs):
-        tokens = self.embedding(pairs)
-        _, gh, gw, d = tokens.shape
-        tokens = (tokens + spatial_positions(gh, gw, d, tokens)).flatten(1, 2)
-        return self.encoder(torch.cat((self.token.expand(len(pairs), -1, -1), tokens), 1))[:, 0]
-
-
-class ST2Motion(nn.Module):
-    """Transformer pair encoding followed by bounded global geometric alignment."""
-    def __init__(self, config):
-        nn.Module.__init__(self)
-        self.encoder = PairMotionEncoder(config)
-        self.head = nn.Linear(config.embedding_dim, 4)
-        nn.init.zeros_(self.head.weight)
-        nn.init.zeros_(self.head.bias)
-
-
-    def forward(self, sequence):
-        b, length, _, h, w = sequence.shape
-        steps = length - 1
-        previous = sequence[:, :-1].reshape(-1, 3, h, w).detach()
-        current = sequence[:, 1:].reshape(-1, 3, h, w).detach()
-        pairs = F.interpolate(torch.cat((previous, current), 1), size=(64, 80), mode='bilinear', align_corners=False)
-        bounded = self.head(self.encoder(pairs)).tanh()
-        parameters = bounded * bounded.new_tensor((.15, .15, .15, .05))
-        theta = similarity_matrix(parameters, h, w)
-        warped, grid = warp_images(previous, theta)
-        difference = warped - current
-        mse = difference.square().mean(1, keepdim=True)
-        robust_error = (difference.square() + 1e-6).sqrt().mean(1, keepdim=True)
-        valid = (grid.detach().abs() < .98).all(-1).unsqueeze(1)
-        return {'motion_mse': mse.reshape(b, steps, h, w),
-                'motion_error': robust_error.reshape(b, steps, 1, h, w),
-                'motion_valid': valid.reshape(b, steps, 1, h, w),
-                'motion_theta': theta.reshape(b, steps, 2, 3),
-                'motion_parameters': parameters.reshape(b, steps, 4),
-                'motion_regularization': bounded.square().mean()}
-
-
-
 class ST2Gate(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.encoder = SpaceTimeEncoder(config, config.history_frames + 1)
-        self.errors = PatchEmbedding(1 + config.history_frames, config.embedding_dim, config.patch_size)
+        self.errors = PatchEmbedding(1 + 2 * config.history_frames, config.embedding_dim, config.patch_size)
         self.statistics = nn.Linear(8, config.embedding_dim)
         self.decoder = PatchDecoder(config, 1)
 
-    def forward(self, sequence, raw_mse, motion_mse, statistics):
+    def forward(self, sequence, raw_mse, registration_mse, registration_valid, statistics):
         memory = self.encoder(sequence)
-        extra = self.errors(torch.cat((raw_mse, motion_mse), 1))
+        extra = self.errors(torch.cat((raw_mse, registration_mse, registration_valid.to(raw_mse.dtype)), 1))
         extra = extra + self.statistics(statistics)[:, None, None]
         return self.decoder(memory, extra)

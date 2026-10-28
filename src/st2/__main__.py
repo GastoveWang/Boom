@@ -10,7 +10,8 @@ if __package__ in (None, ''):
 
 def main():
     commands = {'train': 'train', 'infer': 'infer', 'prepare': 'prepare',
-                'export-tensorboard': 'export_tensorboard', 'visualize': 'visualize'}
+                'export-tensorboard': 'export_tensorboard', 'visualize': 'visualize',
+                'download-weights': 'download_weights'}
     parser = argparse.ArgumentParser(description='ST2 training, dataset preparation and model inference')
     parser.add_argument('command', choices=commands, help='Use <command> --help for command options')
     args = parser.parse_args(sys.argv[1:2])

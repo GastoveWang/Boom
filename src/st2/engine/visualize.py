@@ -12,7 +12,30 @@ import uuid
 from st2.common.utils import write_json
 
 ROOT = Path(__file__).resolve().parents[3]
-PARTS = ('model', 'predictor', 'motion', 'gate')
+PARTS = ('model', 'predictor', 'registration', 'gate')
+
+
+def pipeline_graph(part, direction):
+    """Explicit schematic for the non-differentiable OpenCV boundary, not a trace."""
+    from graphviz import Digraph
+    graph = Digraph(f'ST2_{part}')
+    graph.attr(rankdir=direction)
+    graph.attr('node', shape='box')
+    graph.node('sequence', 'RGB history + current')
+    graph.node('matcher', 'Frozen outdoor LoFTR\nCNN + Transformer correspondences')
+    graph.node('ransac', 'RANSAC similarity matrix\nquality checks')
+    graph.node('warp', 'Inverse pixel warp + valid overlap\nmasked RGB MSE + quality')
+    graph.edges([('sequence', 'matcher'), ('matcher', 'ransac'), ('ransac', 'warp')])
+    if part == 'model':
+        graph.node('history', 'Past frames only')
+        graph.node('predictor', 'ST2Predictor\ncausal normal-frame prediction')
+        graph.node('raw', 'Raw prediction MSE vs current')
+        graph.node('gate', 'ST2Gate\nRGB sequence + raw MSE + residuals + validity + quality')
+        graph.node('output', 'H = detached(raw MSE) * (floor + (1-floor)*sigmoid(logits))')
+        graph.edges([('history', 'predictor'), ('predictor', 'raw'), ('sequence', 'raw'),
+                     ('raw', 'gate'), ('warp', 'gate'), ('sequence', 'gate'),
+                     ('raw', 'output'), ('gate', 'output')])
+    return graph
 
 
 def find_graphviz():
@@ -45,8 +68,9 @@ def input_shapes(config, height, width, batch_size, part):
     history = (batch_size, config.history_frames, 3, height, width)
     current = (batch_size, 3, height, width)
     sequence = (batch_size, config.history_frames+1, 3, height, width)
-    return {'model': [history, current], 'predictor': history, 'motion': sequence,
+    return {'model': [history, current], 'predictor': history, 'registration': sequence,
             'gate': [sequence, (batch_size, 1, height, width),
+                     (batch_size, config.history_frames, height, width),
                      (batch_size, config.history_frames, height, width), (batch_size, 8)]}[part]
 
 
@@ -99,7 +123,7 @@ def export_graphs(output=ROOT/'output/st2/visualization', checkpoint=None, *,
                'device': device, 'depth': depth, 'direction': direction,
                'expand_nested': expand_nested,
                'graphviz_dot': str(executable) if executable else None,
-               'graph_kind': 'forward computation trace; not a backward graph or attention heatmap',
+               'graph_kind': 'model/registration: explicit schematic; predictor/gate: torchview forward trace',
                'parts': {}}
     write_json(run/'summary.json', summary)
     for name in PARTS if part == 'all' else (part,):
@@ -115,21 +139,27 @@ def export_graphs(output=ROOT/'output/st2/visualization', checkpoint=None, *,
                     model.load_state_dict(state['model'], strict=True)
                 target = model if name == 'model' else getattr(model, name)
                 record['parameters'] = sum(p.numel() for p in target.parameters())
+                record['graph_kind'] = ('explicit pipeline schematic; OpenCV RANSAC cannot be tensor-traced'
+                                        if name in ('model', 'registration') else 'actual torchview forward trace')
                 previous_fastpath = torch.backends.mha.get_fastpath_enabled()
                 try:
                     torch.backends.mha.set_fastpath_enabled(False)
-                    graph = draw_graph(target, input_size=record['input_shapes'], graph_name=f'ST2_{name}',
-                                       device=device, depth=depth, mode='eval', expand_nested=expand_nested,
-                                       graph_dir=direction, show_shapes=True, save_graph=False,
-                                       hide_inner_tensors=True, hide_module_functions=True)
+                    if name in ('model', 'registration'):
+                        visual = pipeline_graph(name, direction)
+                    else:
+                        graph = draw_graph(target, input_size=record['input_shapes'], graph_name=f'ST2_{name}',
+                                           device=device, depth=depth, mode='eval', expand_nested=expand_nested,
+                                           graph_dir=direction, show_shapes=True, save_graph=False,
+                                           hide_inner_tensors=True, hide_module_functions=True)
+                        visual = graph.visual_graph
                 finally:
                     torch.backends.mha.set_fastpath_enabled(previous_fastpath)
-            visual = graph.visual_graph
             # Use Graphviz's built-in font metrics rather than torchview's Linux
             # font default, which can clip labels on Windows installations.
             visual.node_attr.update(fontname='Times-Roman')
             visual.edge_attr.update(fontname='Times-Roman')
-            visual.graph_attr.update(label=f'ST2 | {name} | {height}x{width} | {record["parameters"]:,} parameters',
+            kind = 'pipeline schematic' if name in ('model', 'registration') else 'torchview forward trace'
+            visual.graph_attr.update(label=f'ST2 v2 | {name} | {kind} | {height}x{width} | {record["parameters"]:,} parameters',
                                      labelloc='t', fontname='Times-Roman', fontsize='18')
             dot_name = name+'.dot'
             (run/dot_name).write_text(visual.source, encoding='utf-8')

@@ -4,9 +4,9 @@
 
 本頁用於回答「目前模型相對原本模型改了什麼」。後續逐次修改見 [MODEL_CHANGELOG.md](MODEL_CHANGELOG.md)；目前使用方式見 [ST²](ST2.md)。記錄以實際原始碼、run 設定及輸出為準，不將推測寫成實驗結論。
 
-## 目前狀態（2026-10-27）
+## 目前狀態（2026-10-28）
 
-目前只保留 `src/st2/` 的純 Transformer ST²；Boom 維持 motion／YOLO 與原有執行、顯示、事件及定位流程。下文按日期保留早期模型與搬移紀錄，涉及的舊入口可能已刪除。
+目前 `src/st2/` 為ST² v2：保留Transformer Predictor／Gate，移除ST2Motion，背景補償統一使用凍結戶外LoFTR＋RANSAC相似變換。LoFTR含CNN，因此完整系統不再是純Transformer；Boom 維持 motion／YOLO 與原有執行、顯示、事件及定位流程。下文按日期保留早期模型與搬移紀錄，涉及的舊入口可能已刪除。
 
 2026-10-27 訓練輸出改為 `output/st2/<日期時間>/training/` 與同層 `inference/`，新增訓練成功結束的 `final.pt` 與完成摘要；每輪 `last.pt`、最佳 `best.pt`、log、TensorBoard、設定與指標集中於 training。此次只調整實驗保存方式，不改相對 ASTT 的架構、loss、訓練參數或權重格式，既有 ST² 權重可繼續載入／續訓，無須因此重訓。
 
@@ -16,10 +16,14 @@
 |---|---|---|
 | 空間／時間主幹 | STE → 每幀 CLS → TTE → CSA | 保留 patch 格點的交替空間視窗／時間注意力 |
 | 正常畫面解碼 | 融合向量＋CNN decoder | Transformer query decoder＋線性 RGB patches |
-| 背景運動與目標關注 | 核心模型無此兩分支 | Transformer 運動估計＋框監督關注 |
+| 背景運動與目標關注 | 核心模型無此兩分支 | 凍結LoFTR對應＋RANSAC幾何補償、有效遮罩／品質＋框監督關注 |
 | 模型狀態 | 歷史比較模型，程式在 benchmark/ASTT | 流程驗證完成，尚未正式30輪訓練或接入即時事件 |
 
 ST²保留下一幀預測的研究思路，但不是ASTT完整架構。操作見 [ST2.md](ST2.md)，完整歷史見 [MODEL_CHANGELOG.md](MODEL_CHANGELOG.md)。
+
+## 2026-10-28：以LoFTR＋RANSAC取代ST2Motion
+
+相對原ASTT，仍保留正常下一幀預測與誤差定位思路，額外使用框監督Gate挑選煙霧候選。此次移除可學運動分支及其背景loss／正則，改由預訓練LoFTR找對應、RANSAC估計相似矩陣，再warp取得殘差；Gate新增有效遮罩與八項品質。Predictor、原始MSE基底與H=E×(0.05+0.95A)不變，沒有因而對齊Predictor歷史或宣稱視差已解決。完整新權重含凍結LoFTR，舊ST² v1不能直接載入／續訓，需要重新訓練。已完成受控位移、梯度、checkpoint與小規模訓練／續訓／推論驗證；尚未證明煙霧效能或即時FPS提升。操作與設定見[ST²](ST2.md)，舊三分支快照見[ST² v1](history/ST2_V1.md)。
 
 ## 對照基準
 

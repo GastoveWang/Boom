@@ -45,7 +45,7 @@ def infer_one(source, directory, model, height, width, args, device, progress_pa
     curve = deque()
     pending = []
 
-    def emit(frame, index, raw=None, weighted=None, attention=None, support=None, motion=None):
+    def emit(frame, index, raw=None, weighted=None, attention=None, support=None, motion=None, registration=None):
         motion = motion or {'motion_status': 'warming_up', 'motion_score_valid': False}
         row = {'frame_index': index, 'time_seconds': index / fps, 'status': 'warming_up' if raw is None else 'scored',
                'raw_mse_mean': None, 'weighted_mse_mean': None, 'raw_top_score': None,
@@ -55,6 +55,7 @@ def infer_one(source, directory, model, height, width, args, device, progress_pa
                **{k: motion.get(k) for k in ('rotation_deg_per_second', 'translation_diagonal_per_second',
                                              'motion_inlier_ratio', 'motion_overlap', 'motion_residual_threshold',
                                              'motion_support_fraction')}}
+        row.update(registration or {'registration_status': 'warming_up'})
         final_map = weighted
         if raw is not None:
             a, b = top_score(raw), top_score(weighted)
@@ -80,7 +81,8 @@ def infer_one(source, directory, model, height, width, args, device, progress_pa
                 np.savez_compressed(directory / 'heatmaps' / f'{index:08d}.npz',
                                     raw_mse=raw, weighted_mse=weighted, attention=attention,
                                     displayed_mse=final_map,
-                                    target_score_valid=np.array(motion['motion_score_valid']))
+                                    target_score_valid=np.array(motion['motion_score_valid']),
+                                    registration_status=np.array(row['registration_status']))
         csv_writer.writerow(row)
         writer.write(render_st2(frame, raw, final_map, curve, index, fps, args.heatmap_max,
                                        motion_status=motion['motion_status'], normalized=True,
@@ -99,8 +101,14 @@ def infer_one(source, directory, model, height, width, args, device, progress_pa
                 for key in ('raw_mse', 'weighted_mse', 'attention')}
         if not all(np.isfinite(value).all() for value in maps.values()):
             raise ValueError('Non-finite heatmap')
+        quality = outputs['registration_quality'][:, -1].float().cpu().numpy()
         for i, (_, frame, index, support, motion) in enumerate(pending):
-            emit(frame, index, maps['raw_mse'][i], maps['weighted_mse'][i], maps['attention'][i], support, motion)
+            q = quality[i]
+            registration = {'registration_status': 'aligned' if q[0] else 'uncertain',
+                            'registration_inlier_ratio': float(q[1]),
+                            'registration_overlap': float(q[5]),
+                            'registration_reprojection_error_normalized': float(q[2])}
+            emit(frame, index, maps['raw_mse'][i], maps['weighted_mse'][i], maps['attention'][i], support, motion, registration)
         pending.clear()
 
     try:
@@ -123,7 +131,9 @@ def infer_one(source, directory, model, height, width, args, device, progress_pa
                 'weighted_mse_mean', 'raw_top_score', 'weighted_top_score', 'attention_max', 'guarded_top_score',
                 'raw_score_01', 'learned_weighted_score_01', 'target_score_01', 'motion_status', 'motion_score_valid',
                 'rotation_deg_per_second', 'translation_diagonal_per_second', 'motion_inlier_ratio',
-                'motion_overlap', 'motion_residual_threshold', 'motion_support_fraction'])
+                'motion_overlap', 'motion_residual_threshold', 'motion_support_fraction',
+                'registration_status', 'registration_inlier_ratio', 'registration_overlap',
+                'registration_reprojection_error_normalized'])
             csv_writer.writeheader()
             index = 0
             while not args.max_frames or index < args.max_frames:
@@ -217,7 +227,9 @@ def run_inference(checkpoint, source, output, device='auto', batch_size=4, heatm
                 'model_config': asdict(config), 'input_size_hw': [height, width], 'source': str(source),
                 'model_version': config.model_version,
                 'model_name': config.model_name, 'model_display_name': config.model_display_name,
-                'learned_background_motion': config.uses_motion,
+                'learned_background_motion': False,
+                'registration_backend': config.registration_backend,
+                'registration_matrix_convention': 'current pixel centres -> previous pixel centres',
                 'heatmap_max': heatmap_max, 'batch_size': batch_size, 'max_frames': max_frames,
                 'save_heatmaps': save_heatmaps, 'score_top_fraction': .001, 'frame_index_base': 0,
                 'raw_mse_definition': 'mean RGB squared error in [0,1], predicted from past frames only',

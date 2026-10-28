@@ -1,67 +1,40 @@
-# ST² 模型視覺化：torchview
+# ST² v2 架構與運算圖
 
-更新日期：2026-10-27。此功能使用 [torchview 官方實作](https://github.com/mert-kurttutan/torchview) 追蹤 ST² 實際的 forward，顯示模組、張量尺寸及運算連線。
+更新日期：2026-10-28。ST2Motion已移除，現行為Transformer Predictor／Gate＋凍結LoFTR／RANSAC。
 
-## 直接查看專案內的圖
+## 現行架構
 
-以下為目前預設架構的實際 torchview 圖：8 張歷史＋當前影格、768×576、batch1、depth2。沒有使用訓練權重；只展示架構與張量流。
+以下圖使用預設8歷史＋當前、768×576、batch1。沒有使用訓練權重；用來展示架構。
 
-| 圖 | 內容 |
+| 圖 | 種類與內容 |
 |---|---|
-| [完整模型](diagrams/ST2_MODEL.svg) | ST2Predictor、ST2Motion、ST2Gate 與誤差加權 |
-| [正常畫面預測分支](diagrams/ST2_PREDICTOR.svg) | 歷史影格→時空編碼→預測畫面 |
-| [背景運動分支](diagrams/ST2_MOTION.svg) | 相鄰影格對→運動參數→配準誤差 |
-| [目標關注分支](diagrams/ST2_GATE.svg) | 完整序列＋誤差＋運動統計→關注 logits |
+| [完整模型](diagrams/ST2_V2_MODEL.svg) | 明確繪製的資料流示意，標示非可微分配準邊界 |
+| [配準模組](diagrams/ST2_V2_REGISTRATION.svg) | LoFTR→RANSAC→warp、有效遮罩與殘差的流程示意 |
+| [Predictor](diagrams/ST2_V2_PREDICTOR.svg) | torchview實際forward追蹤 |
+| [Gate](diagrams/ST2_V2_GATE.svg) | torchview實際forward追蹤；含殘差／有效遮罩／品質輸入 |
 
-SVG可用瀏覽器開啟並放大。這是實際運算圖，會包含reshape、detach及誤差計算，因此比概念架構圖更細。
+OpenCV RANSAC包含CPU陣列與資料依賴判斷，不能用meta張量追蹤。完整模型與registration圖因此明確標為pipeline schematic，不能稱為完整模型的實際forward計算圖；Predictor／Gate仍使用實際torchview追蹤。圖上參數量包含凍結LoFTR，不等於可訓練參數量。
 
-## 產生自己的圖
+## 匯出
 
 ```powershell
 conda activate boom
+python -m pip install -e ".[st2-visualization]"
 python src/st2 visualize
-```
-
-預設同時匯出完整模型與三條分支，產物保存在新建的`output/st2/visualization/st2_torchview_<時間>_<ID>/`：
-
-```text
-model.svg / model.dot
-predictor.svg / predictor.dot
-motion.svg / motion.dot
-gate.svg / gate.dot
-summary.json
-```
-
-`summary.json`記錄模型設定、工具版本、輸入尺寸、參數量、checkpoint來源及各圖完成／失敗狀態。每次建立獨立資料夾，不覆寫已有輸出。
-
-```powershell
-# 只看完整模型，使用較淺的模組層級
-python src/st2 visualize --part model --depth 1
-# 展開更多層，改成由左向右
+python src/st2 visualize --part registration
 python src/st2 visualize --part predictor --depth 3 --direction LR
-# 依已訓練checkpoint的架構與影像尺寸畫圖
 python src/st2 visualize --checkpoint "output/st2/你的日期時間/training/best.pt"
-# CPU實際前向，或只輸出DOT原始圖
 python src/st2 visualize --device cpu --height 64 --width 96 --format dot
 ```
 
-預設使用`meta`裝置，只依張量形狀執行追蹤，不配置完整影像activation；模型初始化、checkpoint讀取與圖結構仍會占用CPU記憶體。沒有checkpoint時使用目前預設ST²架構，不代表模型已訓練。提供checkpoint時嚴格載入權重，舊baseline/camera-aware模型會被拒絕。
+`--part`支援all／model／predictor／registration／gate；不再有motion選項。預設meta裝置，Predictor／Gate也可用CPU。架構圖不執行LoFTR匹配，不需下載預訓練權重。提供checkpoint時只接受現行v2完整權重，嚴格載入，不轉換舊ST2Motion權重。
 
-## 安裝及 Graphviz
+每次建立新目錄 `output/st2/visualization/st2_torchview_<時間>_<ID>/`，包含各部分SVG／DOT與summary.json；各圖的graph_kind分別記錄是示意圖或實際追蹤。原有檔案不覆寫。
 
-```powershell
-python -m pip install -e ".[st2-visualization]"
-```
+渲染SVG需Graphviz的dot執行檔；缺dot時保留DOT並回報partial。圖不是反向梯度圖或attention熱圖。匯出在獨立模型執行，保留RNG、MHA fastpath與PATH狀態。
 
-torchview依賴Python graphviz套件，匯出SVG還需要Graphviz的`dot`執行檔，只有pip安裝Python套件並不保證dot存在。程式會尋找PATH、目前Python環境的Library/bin，以及Windows常見安裝位置；只在渲染子程序期間調整本程序的PATH，不修改系統設定。
+## 歷史快照
 
-本機boom環境已確認有torchview 0.2.7、Python graphviz，以及環境Library/bin內的dot.exe。若其他環境缺dot，仍保留DOT原始圖，SVG未完成會明確標為partial並傳回非零結束碼；安裝方式參考[torchview官方說明](https://github.com/mert-kurttutan/torchview#installation)。
+舊檔 [ST2_MODEL.svg](diagrams/ST2_MODEL.svg)、[ST2_MOTION.svg](diagrams/ST2_MOTION.svg)、[ST2_PREDICTOR.svg](diagrams/ST2_PREDICTOR.svg)、[ST2_GATE.svg](diagrams/ST2_GATE.svg) 保留作為v1三分支歷史紀錄，不能用來代表目前架構。舊版說明見[ST² v1](history/ST2_V1.md)。
 
-## 行為與限制
-
-- 圖是forward追蹤，不是反向梯度圖、煙霧熱圖或attention權重圖；圖上有detach也不等於完整描述訓練梯度監督。
-- 深度為1較適合總覽；深度越大圖越複雜。三條分支可分開檢視。
-- 視覺化建立獨立模型，不使用正在訓練的實例；不改模型計算、loss或分數，不需要重訓。追蹤時暫時關閉融合MHA fastpath，完成或失敗都恢復原設定與RNG。
-- SVG與DOT為本功能提供的格式，避免依賴平台點陣字型渲染；圖中輸入尺寸、參數及工具版本可在summary核對。
-
-已驗證預設尺寸四張圖、checkpoint自訂history／patch、CPU與meta追蹤、權重不變、RNG／MHA／PATH恢復、缺dot及追蹤失敗的狀態記錄。測試產物在tmp下建立後清理；文件SVG快照與本次新建正式視覺化輸出保留。模型訓練與Boom執行流程未改動。
+2026-10-28已驗證預設尺寸四圖匯出，以及64×96的示意／meta實際追蹤；驗證產物在tmp清理，以上SVG為正式文件資產。

@@ -1,118 +1,86 @@
-# ST² v1.0：煙霧目標導向時空 Transformer
+# ST² v2：正常畫面預測＋LoFTR／RANSAC 背景補償
 
-> 目前程式只保留ST²；舊Smoke Heatmap轉接、baseline/camera-aware網路與舊路徑映射已移除。所有既有輸出維持原處，沒有因程式清理而改名或刪除。
+更新日期：2026-10-28。保留 ST² 的正常影格 Predictor 與框監督 Gate，移除 `ST2Motion`／`PairMotionEncoder`，背景配準統一使用凍結的戶外 LoFTR＋RANSAC。架構標記為 `st2.v2.0-loftr-ransac`。
 
-模型全名為 **Smoke-Targeted Spatiotemporal Transformer**，論文／文件簡稱 **ST²**，程式與檔名使用 **ST2 / st2**。Boom 是無人機荒野煙霧偵測與定位系統，ST² 是其中的辨識研究模型。
+Boom 是一套用於飛行中無人機的荒野煙霧偵測與定位系統。ST² 是獨立辨識研究套件，目前輸出候選熱圖與分數，尚未接入 Boom 即時事件確認或 GPS 定位。
 
-> 我們提出煙霧目標導向時空 Transformer（Smoke-Targeted Spatiotemporal Transformer, ST²），結合正常影格預測、背景運動估計與區域監督的目標關注機制，產生荒野煙霧候選變化熱圖。
+## 資料流
 
-Smoke-Targeted 表示框標註監督的目標關注；Spatiotemporal 表示空間／時間注意力；Transformer 表示三條可學習分支皆採無卷積架構。名稱尚未查核是否與既有論文或專案重名。
+```text
+歷史 8 幀 → ST2Predictor → 正常預測畫面 → 與當前影格比較 → 原始 MSE E
+歷史＋當前的 8 組相鄰影格 → 戶外 LoFTR → RANSAC 相似變換
+    → warp 前幀到後幀 → 補償 MSE、有效遮罩、配準品質
+完整 9 幀＋E＋補償資訊 → ST2Gate → attention A
+H = detached(E) × (0.05 + 0.95 × A)
+```
 
-ST² v1.0 的初期工作名稱是 Smoke Heatmap v3.0；目前已獨立為 ST² 套件。程式主體為 `src/st2/models/transformer.py`，包含 `ST2Predictor`、`ST2Motion`、`ST2Gate`；模型建立與 loss 由 `src/st2/models/network.py` 負責，訓練與推論由同套件負責，與 Boom 執行環境分離。
+Predictor 仍只讀歷史，沒有當前影格洩漏；本版沒有先對齊 Predictor 的歷史影像，也沒有改用補償 MSE 直接取代最終熱圖的 E。Gate 的補償輸入與原始誤差皆隔離梯度。配準品質差表示補償不確定，不等同有煙霧；補償後殘差也可能來自視差、樹葉、遮擋或曝光。
 
-目前只支援 `transformer` 模型架構。這是 Boom 自行實作的架構，參考分離時空注意力與密集 patch 解碼思路，不是 TimeSformer 或 Segmenter 的官方重現，也沒有匯入其權重。
+## Predictor 與 Gate
 
-## 架構及預設值
+- 預設 8 張歷史、RGB [0,1]、768×576；patch16、embedding128、4 heads、dropout0.1、2 組空間／時間 block、6×6 空間視窗。
+- Predictor 保留 `clip(last_history + 0.25*tanh(delta),0,1)`；以位置編碼、交替視窗空間注意力、同格點時間注意力及線性 patch decoder 生成影像。
+- Gate 的序列 encoder 保留。誤差 embedding 從 9 通道擴為 17 通道：原始 MSE 1＋補償 MSE 8＋有效遮罩 8。八項配準品質沿影格對取平均後，經線性層加入 decoder query。
+- Predictor／Gate 仍無卷積；LoFTR 使用 CNN＋Transformer，因此完整系統不能稱為純 Transformer。
 
-所有可學習的影像特徵處理使用線性投影、Transformer attention、MLP 與 LayerNorm，模型內沒有卷積／反卷積。切塊、拼圖、雙線性幾何配準及 MSE 是明確的數學操作，仍會保留。
+## LoFTR＋RANSAC 配準
 
-- 8 張歷史、RGB [0,1]、768×576；patch=16，每張 48×36=1,728 個 tokens。
-- embedding=128、heads=4、dropout=0.1、前饋維度=512；預測與 gate 各有 2 組空間／時間 block。
-- 空間使用 6×6 patch 視窗，交替使用未移位與偏移半個視窗的分組。偏移以 padding 實現，不環繞；padding keys 被遮罩。相鄰視窗隨層交換資訊，不是一次全圖注意力。
-- 時間注意力在各格點的歷史 tokens 上執行；二維正弦位置編碼＋可學時間編碼保留位置及順序。不把每張圖壓成單一 CLS。
-- 完整預設模型共有 3,587,204 個參數。
+實作：`src/st2/models/registration.py`。依賴固定為 `kornia==0.8.2`，使用戶外預訓練 LoFTR；權重凍結、始終 eval，不計算配準反向梯度。
 
-### 正常畫面 predictor
+1. 相鄰兩幀轉灰階，最長邊最多 320，尺寸調整為 8 的倍數，最短邊至少 32。匹配與品質門檻在縮圖座標計算。
+2. 灰階標準差低於 0.01 的影格對直接判為不可靠，避免平坦畫面的虛假匹配。
+3. LoFTR 輸出兩幀對應點與 confidence；保留有限值及 confidence≥0.2 的點。
+4. `cv2.estimateAffinePartial2D(current_points, previous_points, RANSAC)` 估計平移、旋轉、等比例縮放。門檻 3 像素、最多 2000 次、confidence0.995、refine10。
+5. 接受條件：至少 12 內點、內點比例≥0.25、兩幀內點凸包面積各≥畫面5%、內點中位重投影誤差≤3像素、取樣尺度0.5～2、有效重疊≥30%。這些是初始設定，尚未依煙霧驗證集校準。
+6. 依縮圖比例與半像素 resize 座標轉換，將矩陣換回模型輸入解析度；用 `grid_sample` 雙線性取樣對齊。輸出矩陣為 3×3，但它表示相似變換，沒有透視自由度。
 
-歷史 RGB → 線性 patch embedding → 時空 encoder → 每個格點以最後歷史特徵＋可學 query，交叉注意歷史同格點記憶 → 空間視窗 attention → 線性輸出每塊 RGB → 拼回影像。
+矩陣方向明確為「當前／輸出像素中心 → 前幀／來源像素中心」。殘差在每個影格對的後幀座標，不是全部累積到最新幀。取樣越界像素不參與殘差；失敗輸出零殘差、全 false 遮罩、accepted=0，以及 identity 矩陣占位，不能將 identity 解讀成已成功估到零運動。
 
-`predicted = clip(last_history + 0.25*tanh(delta), 0, 1)`；依舊只用歷史，不讀當前答案。decoder 的 cross-attention 在同格點時間記憶上進行，跨位置資訊由空間 block 傳遞，並非全域任意對應。
+八項品質順序：accepted、inlier_ratio、normalized_reprojection_error、previous_coverage、current_coverage、overlap、mean_inlier_confidence、inlier_support。誤差以 RANSAC 門檻正規化，support 為 min(內點數/100,1)。accepted 才是是否成功的判斷；其他指標在拒絕時可能仍有診斷值。
 
-### 背景運動
+配準不讀真實 ROI，也不依賴推論時不存在的標註；RANSAC 假設主要匹配屬於背景。大面積動態物體、重複紋理及山林視差仍可能使此假設失效。沒有 ST2Motion 回退；失敗資訊交給 Gate。
 
-完整 9 幀拆成 8 組相鄰 RGB 對（6 通道），每對先縮至 80×64，使用固定 patch=8，得到 80 個 pair tokens。加入全局 motion token 與 2 層 Transformer encoder，再由線性層輸出 4 個相似變換參數。
+為限制顯存，每個 batch 內的相鄰影格對逐組匹配。目前沒有跨窗口快取，避免打亂訓練／多影片時混用狀態；代價是重複窗口會重算，不能據此宣稱已達機載即時 FPS。
 
-沿用 v2.2 的有界平移／旋轉／縮放、符合長寬比的矩陣、可微分 warp、配準誤差及 ROI 排除 loss。幾何運算直接實作在 `ST2Motion.forward`，已移除舊 CNN 運動類別。最後線性 head 初始化為零，從 identity 開始。這不是光流、深度或完整 3D 運動估計。
+## Loss 與權重相容性
 
-### 目標 gate
+總 loss = normal-window prediction MSE＋balanced BCE＋positive Dice。移除原運動背景 photometric loss、運動參數 regularization 與 `--motion-loss-weight`。保留 50% 訓練相機軌跡增強、框弱監督、normal／ignore 定義、top-0.1% 分數與固定對數顯示；框不是煙霧像素真值。
 
-完整 9 幀 → 獨立的線性 patch embedding＋時空 encoder。原始 MSE＋8 張 motion MSE 經另一個線性 patch embedding；4 個運動參數的時間均值與 RMS 經線性層，共同加入當前位置 query。Transformer decoder 查詢 9 幀記憶，再經空間 attention、線性 patch logits 與拼圖，得到像素 logits；Sigmoid 得到 A。
+Gate 輸入已改變，新版本需重新訓練。舊 ST² v1／camera-aware／baseline 權重會明確拒絕，不靜默轉換；既有權重、資料與輸出保留原地。完整 v2 checkpoint 保存凍結 LoFTR state_dict 與全部配準設定，因此續訓與推論不需要下載或依賴原本的 LoFTR 檔案。容器仍用 `st2.checkpoint.v1`，以 `model_config.registration_backend=loftr-ransac` 區分新架構。
 
-`E = mean_RGB((predicted-current)^2)`；`H = detached(E)*(0.05+0.95*A)`。輸出鍵、固定 0～1 顯示、top-0.1% 逐幀分數與可選 guard 均沿用。gate 的所有 predictor／motion 輸入 detach，三條分支維持獨立監督梯度。
-
-## 訓練與相容性
-
-### 根目錄一鍵訓練與推論
+## 執行
 
 ```powershell
 conda activate boom
+python -m pip install -e ".[st2]"
+python src/st2 download-weights
 python train_st2.py
 ```
 
-根目錄入口直接呼叫現有ST²引擎，預設資料`data/st2/st2_v1`、30輪、batch4、768×576、device=auto。訓練與驗證成功、權重保存完成後，載入best.pt對`data/video/1440-1080/0603`內影片推論。輸出仍在`output/st2/<日期時間>/training/`，自動推論放在同一日期時間資料夾的inference子目錄，與training並列。
+LoFTR 權重放在 `models/pretrained/registration/loftr_outdoor.ckpt`，受 Git 忽略；下載命令保留既有檔案不覆寫。新訓練可用 `--loftr-weights` 指定戶外權重，`--registration-max-side` 調整匹配解析度；其他配準參數定義於 ST2Config，皆隨 checkpoint 保存。
 
 ```powershell
-# 更換推論來源
-python train_st2.py --infer-source "data/video/你的影片.mp4"
-# 續訓至總共30輪，完成後自動推論
+python src/st2 train --epochs 30 --device cuda --registration-max-side 320 --infer-source "data/video/1440-1080/0603"
 python train_st2.py --resume "output/st2/你的日期時間/training/last.pt" --epochs 30
-```
-
-根目錄入口只是設定預設推論來源；`python src/st2 train`原本的可選推論行為不變。所有ST²訓練參數均可使用，`--help`查看完整選項。推論來源先驗證，來源無效不啟動訓練；訓練失敗或中斷不會進入推論。既有模型與輸出不覆寫。
-
-### 引擎設定與權重
-
-標註定義、資料切分、9 幀連續窗口、正常窗口限定預測 MSE、平衡 BCE、正樣本 Dice、背景 loss 係數 0.2、motion regularization 係數 0.001、相機增強機率 0.5 均不變。BBox 是區域弱監督，不是煙霧像素真值。
-
-ST² 架構仍需重新訓練，不能把 v2.0/v2.2 的權重直接當作 ST²。2026-10-27 獨立套件整理不改模型參數、loss 或分數，已存在的同架構 ST² 權重無須因搬移重訓。
-
-目前主程式位於 `src/st2/`，不依賴 `boom`。新 checkpoint 使用 `st2.checkpoint.v1`，架構標記為 `st2.v1.0`；訓練／推論摘要保存 `model_name=ST2` 與完整名稱。載入器接受新容器，以及舊容器中variant明確為transformer的同架構ST²權重；state_dict鍵不變。baseline/camera-aware及缺少variant的歷史模型會明確拒絕，不再提供其網路程式。
-
-新入口 `src/st2/cli/train.py` 預設 `variant=transformer`，資料為 `data/st2/st2_v1`，輸出至 `output/st2/<日期時間>/training/`。標註新匯出名預設 st2，新標註 schema 為 `st2.annotations.v1`，仍支援舊 boom.astt_bbox.v1/v2/v3。歷史 JSON 與權重不改寫。
-
-支援 `--patch-size`、`--transformer-layers`、`--window-size`；訓練尺寸需同時符合資料載入器的8倍數及patch整除。續訓恢復來源架構設定，推論尺寸由checkpoint取得。舊tools、boom.smoke_heatmap轉接與舊路徑自動映射已移除，只使用現行ST²入口與實際路徑。模型／loss類別為ST2Config、ST2Model、ST2Criterion；資料集為ST2Dataset／ST2SequenceDataset。
-
-```powershell
-conda activate boom
-python src/st2 train --model-variant transformer --epochs 30 --history-frames 8 --height 576 --width 768 --batch-size 4 --workers 4 --device cuda --infer-source "data/video/1440-1080/0603"
-```
-
-正式輸出仍在 `output/st2/<日期時間>/training/`。單獨推論與續訓使用 ST² 入口，依 checkpoint 恢復設定：
-
-```powershell
 python src/st2 infer --checkpoint "output/st2/你的日期時間/training/best.pt" --source "data/video/1440-1080/0603" --device cuda
-python src/st2 train --resume "output/st2/你的日期時間/training/last.pt" --epochs 30 --device cuda
+python src/st2 visualize
 ```
+
+## 推論診斷與 Boom 接入
+
+CSV 新增最新影格對的 `registration_status`（warming_up／aligned／uncertain）、inlier_ratio、overlap 與正規化重投影誤差。配準品質不是煙霧信心，也不自動將原始模型候選分數設為零。`--save-heatmaps` 額外保存配準狀態。
+
+`ST2Runtime.process_frame()` 保留暖機／原始 MSE／加權 MSE／attention／score，另外回傳最新配準狀態、八項品質與矩陣。影格跳號或來源尺寸改變會重新暖機。尚未提供 `run_realtime.py st2`；Boom 的 motion／YOLO 與定位不變。
 
 ## 驗證與限制
 
-現行ST²已驗證無卷積、predictor因果性、熱圖公式、三分支梯度隔離、ROI排除、padding前反向、patch=8、checkpoint往返，以及清理前後相同權重的輸出逐值一致。舊baseline/camera-aware網路已移除；其早期驗證紀錄只保留在歷史文件。
+2026-10-28 使用實際戶外 LoFTR 權重驗證 RANSAC 外點排除、矩陣方向、縮圖比例、warp／無效邊界、平坦影格失敗、前向／反向、梯度隔離及完整 checkpoint 離線重載。實際森林照片在320×240人工右移12像素，估得逆向平移約(-12.114,-0.027)；有效區域補償 MSE約0.00002288，未補償全圖MSE約0.01902。這是受控幾何驗證，兩個均值的比較範圍不同，不是煙霧效能指標。
 
-RTX 5080 實際資料 768×576、8 歷史＋當前、batch=4、FP32：用 2 個不同窗口各重複一次，完成單次前向／反向／AdamW 更新，峰值 allocated 顯存約 7.13 GiB，單次約 0.89 秒（不含解碼及增強、包含首次 GPU 計算開銷）。不是穩態 FPS、完整訓練峰值或公平效能比較。
+實際資料 train／val 各4窗口、64×96、batch2、embedding32、patch8、layers1、window3、CUDA，完成1輪與續訓至第2輪，兩次均自動推論真實影片10幀；已核對前8幀暖機、配準CSV、輸出層級、MP4解碼與Runtime跳號重置。小樣本AUC不作效能結論。預設768×576實際窗口前向通過，八組配準均accepted；預設總參數14,964,080，其中可訓練3,402,624、凍結LoFTR 11,561,456。
 
-所有流程驗證產物均在專案tmp下建立並已清理，摘要保留於本文與 [模型變更紀錄](MODEL_CHANGELOG.md)。既有模型、資料與輸出保持原樣。
+尚未正式30輪訓練、校準煙霧誤報／漏報、量測穩態端到端FPS或地面定位誤差。此版不是完整3D補償，也未解決Predictor歷史未對齊或原始MSE熱圖基底的限制。
 
-完整流程另以實際train/val各16窗口、64×96、batch2、embedding32、patch8/layers1/window3完成第1輪與另run續訓至第2輪；兩次均從best.pt自動推論12幀合成影片。已核對續訓恢復自訂架構、版本與motion資訊、前8幀暖機CSV空分數／後4幀評分，以及12幀MP4解碼。此流程只驗證可執行性，小樣本AUC不作辨識效果結論。
-
-尚未正式30輪訓練或進行煙霧效能評估，也未接入即時 runner／GPS 定位。視窗與 patch 可能限制小煙霧細節及大幅位移的對應；純 Transformer 不保證更準、更快或自動解決相機移動。後續需固定資料比較誤報、召回、延遲、像素／區域定位及端到端 FPS；最終定位仍需另外量測地理座標誤差。
-
-## 與 Boom 的分工
-
-- `src/st2/`：模型、訓練、標註／資料集、權重載入與模型推論。
-- `src/boom/`：原有 motion／YOLO、影片／相機 runner、顯示、事件紀錄與定位；已移除smoke_heatmap子目錄。
-- `src/st2/engine/runtime.py`：提供 `ST2Runtime(checkpoint).process_frame(frame_bgr, frame_index)`，回傳暖機狀態、raw/weighted MSE、關注圖與分數，不產生確認事件或地理座標。影格跳號或來源尺寸變動會重新暖機。
-
-Boom 的 `BaseSmokeDetector` 負責顯示與事件契約，ST²Runtime 是純模型輸出契約；後續接入時在 detection 寫薄適配層，將模型結果交給原有顯示／事件流程。ST²熱圖尚未具備驗證過的事件門檻、確認規則與來源定位，這次沒有擅自改動motion/YOLO或新增確認事件，因此現在仍不能用 `run_realtime.py st2`。
-
-資料與歷史目錄對照及後續清理見 [ST2_MIGRATION.md](history/ST2_MIGRATION.md)，標註操作見 [ST2_DATASET.md](ST2_DATASET.md)。舊歷史輸出中的原模型名稱不代表已用ST²重訓。
-
-## 套件目錄與命令入口
-
-模型運算圖可使用 `python src/st2 visualize` 匯出，支援完整模型與三條分支；現成圖與說明見 [ST2_VISUALIZATION.md](ST2_VISUALIZATION.md)。
-
-ST²入口已收進 `src/st2/cli/`，不再使用tools中的ST²腳本；平常從專案根目錄執行 `python src/st2 train`、`infer`、`prepare` 或 `export-tensorboard`。各命令可加`--help`。
-
-模型在`models/`，資料與標註在`data/`，訓練及推論引擎在`engine/`，共用I/O在`common/`。完整結構見 [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)。資料集、既有權重與輸出路徑不變。
+測試程式與產物位於 `tmp/loftr_validation_20261028/`，驗證完成清理；長期保留正式預訓練LoFTR權重及架構文件。舊版完整說明與驗證見 [ST² v1歷史快照](history/ST2_V1.md)，模型演進見 [MODEL_EVOLUTION.md](MODEL_EVOLUTION.md)。
 
 ## 訓練輸出整理（2026-10-27）
 

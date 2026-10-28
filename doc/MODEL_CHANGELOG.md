@@ -1,5 +1,19 @@
 # 模型與推論變更紀錄
 
+## 2026-10-28 — ST² v2：移除ST2Motion，改用LoFTR＋RANSAC
+
+- 需求：先推送現況，再以原有Predictor／Gate加LoFTR＋RANSAC取代ST2Motion，完成驗證後再推送；修改前保存版本為dev `7540edf`。不更新master，不改寫歷史。
+- 修改前→後：刪除`ST2Motion`／`PairMotionEncoder`及背景photometric loss；戶外LoFTR固定權重與eval，RANSAC估相似變換，再以原解析度inverse warp取得補償MSE。無ST2Motion回退。Gate誤差embedding由1+8擴為1+8+8通道（加入有效遮罩）；原運動參數mean/RMS改為八項配準品質的時間均值。Predictor架構／因果性、原始MSE與H=E×(0.05+0.95A)保留。
+- 檔案／參數：新增`src/st2/models/registration.py`、`cli/download_weights.py`；更新network／transformer／motion、訓練／推論／Runtime／visualize、pyproject與現行文件。固定Kornia0.8.2；長邊320、confidence0.2、RANSAC閾值3縮圖像素／2000次／confidence0.995／refine10；至少12內點、內點比0.25、兩幀覆蓋各0.05、重疊0.3、灰階std0.01、取樣尺度0.5～2。參數皆保存於model_config，CLI提供匹配長邊選項。
+- 幾何與失敗語意：矩陣為current/output像素中心→previous/input像素中心，考慮resize半像素與x/y比例。殘差為各pair後幀座標；不是統一到最新幀。失敗輸出零殘差＋false遮罩＋accepted=0，identity僅占位。無效像素不進補償MSE；不把配準失敗當煙霧或成功的零變化。配準不讀GT ROI。CSV／Runtime另附最新pair配準品質，原候選分數不因配準失敗自動歸零。
+- Loss／資料：正常窗口prediction MSE＋balanced BCE＋positive Dice；移除`--motion-loss-weight`與運動正則。保留0.5相機軌跡增強、BBox弱監督、normal／ignore規則、top0.1%與固定對數顯示。無須再為背景loss讀歷史ROI；相機增強仍同步當前mask。原資料與輸出不修改。
+- 權重相容性／重訓：架構`st2.v2.0-loftr-ransac`，checkpoint容器仍`st2.checkpoint.v1`，以registration_backend拒絕舊v1／baseline／camera-aware完整權重。Gate新輸入需重訓，不自動轉換舊權重。完整v2 checkpoint嵌入凍結LoFTR與loaded狀態，推論／續訓無須下載或原權重檔。預設總參數14,964,080，可訓練3,402,624，LoFTR凍結11,561,456。整套系統含LoFTR CNN，不能稱為純Transformer。
+- 幾何驗證：人工75%內點＋25%外點的RANSAC方向／位移通過，點不足／集中分布被拒；精確對應驗證縮圖回原尺寸、inverse warp與黑邊mask。真實森林照片320×240右移12px，戶外LoFTR估得逆向平移(-12.11392,-0.02746)，有效區域補償MSE≈0.000022882，未補償全圖MSE≈0.019016；比較區域不同，僅作受控幾何檢查。空白影格被拒。
+- 模型／流程驗證：有限loss、Predictor／Gate反向梯度與AdamW更新、LoFTR無梯度且train時仍eval、熱圖公式、完整checkpoint逐值重載一致、舊架構拒絕。train／val各4實際窗口、64×96、batch2、embedding32／patch8／layers1／window3、CUDA，完成第1輪與新run續訓至第2輪；各自真實影片推論10幀，核對8幀暖機、CSV配準欄位、MP4解碼、direct inference層級、Runtime配準矩陣／品質與跳號重置。預設768×576實際9幀窗口前向通過，8組配準均accepted。另外通過獨立CPU推論、可選guard、NPZ配準狀態及更換當前影格不影響Predictor輸出的因果性檢查。小樣本AUC不作辨識效能結論。
+- 視覺化：OpenCV RANSAC不能以meta張量完整追蹤，因此model／registration輸出明確標示pipeline schematic；Predictor／Gate保留實際torchview forward追蹤。預設768×576四圖與64×96四圖匯出通過；舊SVG及舊v1說明保留歷史，新版SVG在`doc/diagrams/ST2_V2_*.svg`。
+- 輸出位置：驗證程式、微型訓練、續訓、checkpoint、影片及圖在`tmp/loftr_validation_20261028/`，完成後清理；戶外預訓練權重正式保存在`models/pretrained/registration/loftr_outdoor.ckpt`，受Git忽略。正式訓練仍為`output/st2/<日期時間>/training/`及同層`inference/`。
+- 指令：`python -m pip install -e ".[st2]"`、`python src/st2 download-weights`、`python train_st2.py`。此機權重已下載並嚴格載入驗證，未啟動正式30輪。未量測煙霧誤報／漏報改善、偵測延遲、穩態端到端FPS或定位誤差。單一相似矩陣不能完整處理視差，Predictor歷史仍未對齊，跨窗口LoFTR尚無快取。
+
 ## 2026-10-28 — 新增 HSTforU 比較套件
 
 - 需求：將指定的官方 HSTforU repo 放進 benchmark，先整理獨立套件並說明與目前 ST² 的差異，不接資料或啟動訓練。

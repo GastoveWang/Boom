@@ -17,9 +17,20 @@ class ST2Config:
     patch_size: int = 16
     transformer_layers: int = 2
     window_size: int = 6
+    registration_backend: str = 'loftr-ransac'
+    registration_max_side: int = 320
+    registration_confidence: float = .2
+    registration_ransac_threshold: float = 3.
+    registration_min_inliers: int = 12
+    registration_min_ratio: float = .25
+    registration_min_coverage: float = .05
+    registration_min_overlap: float = .3
+    registration_min_std: float = .01
 
     @classmethod
     def from_checkpoint(cls, values):
+        if values.get('registration_backend') != 'loftr-ransac':
+            raise ValueError('This version requires ST2 v2 LoFTR+RANSAC weights; legacy ST2Motion checkpoints require retraining')
         if values.get('variant') != 'transformer':
             raise ValueError('Historical baseline/camera-aware models were removed; use an ST2 Transformer checkpoint')
         return cls(**values)
@@ -35,17 +46,28 @@ class ST2Config:
             raise ValueError('gate_floor must be in [0,1)')
         if self.variant != 'transformer':
             raise ValueError('Only the current ST2 Transformer architecture is supported')
+        if self.registration_backend != 'loftr-ransac':
+            raise ValueError('Only LoFTR+RANSAC registration is supported')
+        if type(self.registration_max_side) is not int or self.registration_max_side < 64:
+            raise ValueError('registration_max_side must be an integer >= 64')
+        if type(self.registration_min_inliers) is not int or self.registration_min_inliers < 3:
+            raise ValueError('registration_min_inliers must be >= 3')
+        if not math.isfinite(self.registration_ransac_threshold) or self.registration_ransac_threshold <= 0:
+            raise ValueError('registration_ransac_threshold must be positive and finite')
+        for name in ('registration_confidence', 'registration_min_ratio', 'registration_min_coverage', 'registration_min_overlap', 'registration_min_std'):
+            if not math.isfinite(getattr(self, name)) or not 0 < getattr(self, name) <= 1:
+                raise ValueError(f'{name} must be in (0,1]')
         if any(type(v) is not int or v < 1 for v in
                (self.patch_size, self.transformer_layers, self.window_size)):
             raise ValueError('Patch, Transformer layer and window sizes must be positive integers')
 
     @property
-    def uses_motion(self):
+    def uses_registration(self):
         return True
 
     @property
     def model_version(self):
-        return 'st2.v1.0'
+        return 'st2.v2.0-loftr-ransac'
 
     @property
     def model_name(self):
@@ -53,7 +75,7 @@ class ST2Config:
 
     @property
     def model_display_name(self):
-        return 'Smoke-Targeted Spatiotemporal Transformer (ST² v1.0)'
+        return 'Smoke-Targeted Spatiotemporal Transformer + LoFTR/RANSAC (ST² v2.0)'
 
     def validate_image_size(self, height, width):
         divisor = self.patch_size
@@ -64,10 +86,11 @@ class ST2Config:
 class ST2Model(nn.Module):
     def __init__(self, config=None):
         super().__init__()
-        from st2.models.transformer import ST2Predictor, ST2Motion, ST2Gate
+        from st2.models.transformer import ST2Predictor, ST2Gate
+        from st2.models.registration import LoFTRRegistration
         self.config = config or ST2Config()
         self.predictor = ST2Predictor(self.config)
-        self.motion = ST2Motion(self.config)
+        self.registration = LoFTRRegistration(self.config)
         self.gate = ST2Gate(self.config)
 
     def forward(self, history, current):
@@ -77,22 +100,19 @@ class ST2Model(nn.Module):
         predicted = self.predictor(history)
         raw_mse = (predicted - current).square().mean(1, keepdim=True)
         sequence = torch.cat((history, current[:, None]), 1).detach()
-        motion = self.motion(sequence)
-        parameters = motion['motion_parameters'].detach()
-        statistics = torch.cat((parameters.mean(1), parameters.square().mean(1).sqrt()), 1)
-        logits = self.gate(sequence, raw_mse.detach(), motion['motion_mse'].detach(), statistics)
+        registration = self.registration(sequence)
+        statistics = registration['registration_quality'].mean(1)
+        logits = self.gate(sequence, raw_mse.detach(), registration['registration_mse'],
+                           registration['registration_valid'], statistics)
         attention = logits.sigmoid()
         weighted_mse = raw_mse.detach() * (self.config.gate_floor + (1-self.config.gate_floor)*attention)
         return {'predicted': predicted, 'raw_mse': raw_mse, 'gate_logits': logits,
-                'attention': attention, 'weighted_mse': weighted_mse, **motion}
+                'attention': attention, 'weighted_mse': weighted_mse, **registration}
 
 
 class ST2Criterion(nn.Module):
-    def __init__(self, motion_weight=.2):
+    def __init__(self):
         super().__init__()
-        if not math.isfinite(motion_weight) or motion_weight < 0:
-            raise ValueError('motion_weight must be nonnegative and finite')
-        self.motion_weight = motion_weight
 
     def forward(self, outputs, mask, normal_eligible, sequence_masks=None):
         logits = outputs['gate_logits']
@@ -124,14 +144,6 @@ class ST2Criterion(nn.Module):
         else:
             reconstruction = outputs['raw_mse'].sum() * 0
         gate_loss = balanced_bce + dice
-        motion_loss = logits.sum() * 0
-        motion_regularization = logits.sum() * 0
-        if 'motion_error' in outputs:
-            from st2.models.motion import background_photometric_loss
-            if sequence_masks is None or not torch.equal(sequence_masks[:, -1], mask):
-                raise ValueError('Current ROI mask must agree with final sequence mask')
-            motion_loss = background_photometric_loss(outputs, sequence_masks)
-            motion_regularization = outputs['motion_regularization']
-        return {'loss': reconstruction + gate_loss + self.motion_weight * (motion_loss + .001 * motion_regularization),
+        return {'loss': reconstruction + gate_loss,
                 'reconstruction': reconstruction, 'gate_loss': gate_loss, 'balanced_bce': balanced_bce,
-                'dice_loss': dice, 'motion_photometric': motion_loss, 'motion_regularization': motion_regularization}
+                'dice_loss': dice}

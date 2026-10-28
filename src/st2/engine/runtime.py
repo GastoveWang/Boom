@@ -23,6 +23,9 @@ class FramePrediction:
     weighted_mse: object = None
     attention: object = None
     score_01: object = None
+    registration_status: str = 'warming_up'
+    registration_quality: object = None
+    registration_matrix: object = None
 
 
 class ST2Runtime:
@@ -78,4 +81,7 @@ class ST2Runtime:
         k = max(1, int(np.ceil(len(flat) * .001)))
         score = float(np.partition(flat, len(flat) - k)[-k:].mean())
         return FramePrediction(frame_index, True, **maps,
-                               score_01=self.normalizer(score))
+                               score_01=self.normalizer(score),
+                               registration_status='aligned' if bool(outputs['registration_success'][0, -1]) else 'uncertain',
+                               registration_quality=outputs['registration_quality'][0, -1].cpu().numpy(),
+                               registration_matrix=outputs['registration_matrix'][0, -1].cpu().numpy())

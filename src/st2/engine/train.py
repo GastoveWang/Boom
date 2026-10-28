@@ -31,7 +31,9 @@ def parser():
     p.add_argument('--transformer-layers', type=int, default=2, help='Transformer-only space/time block count')
     p.add_argument('--window-size', type=int, default=6, help='Transformer-only spatial window side in patches')
     p.add_argument('--camera-augmentation', type=float, default=.5, help='Training-only coherent camera trajectory probability')
-    p.add_argument('--motion-loss-weight', type=float, default=.2)
+    from st2.models.registration import DEFAULT_WEIGHTS
+    p.add_argument('--loftr-weights', type=Path, default=DEFAULT_WEIGHTS, help='Outdoor LoFTR checkpoint for new training; full resume checkpoints embed it')
+    p.add_argument('--registration-max-side', type=int, default=320)
     p.add_argument('--gate-floor', type=float, default=.05)
     p.add_argument('--lr', type=float, default=1e-4)
     p.add_argument('--positive-fraction', type=float, default=.5)
@@ -110,6 +112,8 @@ def run_epoch(model, criterion, loader, device, progress_path, epoch, optimizer=
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1., error_if_nonfinite=True)
                 optimizer.step()
             size = len(current)
+            registration_success = outputs['registration_success'].float().mean()
+            total['registration_success_fraction'] = total.get('registration_success_fraction', 0.) + float(registration_success) * size
             count += size
             reconstruction_samples += int(normal.sum())
             for name, value in losses.items():
@@ -190,6 +194,7 @@ def main(argv=None, *, default_infer_source=None):
         from st2.data.sequence import dataset_fingerprint
         from st2.data.dataset import ST2Dataset
         from st2.models.network import ST2Config, ST2Model, ST2Criterion
+        from st2.models.registration import QUALITY_FIELDS
         if min(args.epochs, args.batch_size) < 1 or min(args.workers, args.max_train_samples, args.max_val_samples,
                                                      args.inference_max_frames) < 0:
             raise ValueError('Invalid epoch, batch or sample limit')
@@ -197,8 +202,8 @@ def main(argv=None, *, default_infer_source=None):
             raise ValueError('Invalid learning rate or sampling fraction')
         if not math.isfinite(args.heatmap_max) or args.heatmap_max <= 0:
             raise ValueError('heatmap-max must be positive and finite')
-        if not 0 <= args.camera_augmentation <= 1 or not math.isfinite(args.motion_loss_weight) or args.motion_loss_weight < 0:
-            raise ValueError('Invalid camera augmentation probability or motion loss weight')
+        if not 0 <= args.camera_augmentation <= 1:
+            raise ValueError('Invalid camera augmentation probability')
         checkpoint = None
         if args.resume:
             args.resume = args.resume.resolve()
@@ -212,7 +217,7 @@ def main(argv=None, *, default_infer_source=None):
             ST2Config.from_checkpoint(checkpoint['model_config'])
             args.model_variant = 'transformer'
             args.camera_augmentation = checkpoint['args'].get('camera_augmentation', 0.)
-            args.motion_loss_weight = checkpoint['args'].get('motion_loss_weight', 0.)
+            args.registration_max_side = checkpoint['model_config']['registration_max_side']
             for name, default in (('patch_size', 16), ('transformer_layers', 2), ('window_size', 6)):
                 setattr(args, name, checkpoint['model_config'].get(name, default))
         if args.infer_source:
@@ -230,14 +235,14 @@ def main(argv=None, *, default_infer_source=None):
         config = ST2Config(history_frames=args.history_frames, embedding_dim=args.embedding_dim,
                                   gate_floor=args.gate_floor, variant=args.model_variant,
                                   patch_size=args.patch_size, transformer_layers=args.transformer_layers,
-                                  window_size=args.window_size)
+                                  window_size=args.window_size, registration_max_side=args.registration_max_side)
         config.validate_image_size(args.height, args.width)
-        if checkpoint and asdict(ST2Config.from_checkpoint(checkpoint['model_config'])) != asdict(config):
-            raise ValueError('Checkpoint architecture mismatch')
+        if checkpoint:
+            config = ST2Config.from_checkpoint(checkpoint['model_config'])
         fingerprint = dataset_fingerprint(args.data)
         if checkpoint and checkpoint['dataset_fingerprint'] != fingerprint:
             raise ValueError('Dataset changed; start a new experiment')
-        history_masks = config.uses_motion
+        history_masks = False
         train = ST2Dataset(args.data, 'train', (args.height, args.width), args.history_frames, history_masks)
         val = ST2Dataset(args.data, 'val', (args.height, args.width), args.history_frames, history_masks)
         if not any(train.positive) or not any(s['normal_history'] for s in train.samples):
@@ -251,8 +256,10 @@ def main(argv=None, *, default_infer_source=None):
         random.seed(args.seed)
         torch.manual_seed(args.seed)
         model = ST2Model(config).to(device)
-        criterion = ST2Criterion(motion_weight=args.motion_loss_weight).to(device)
-        optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
+        if not checkpoint:
+            model.registration.load_weights(args.loftr_weights)
+        criterion = ST2Criterion().to(device)
+        optimizer = torch.optim.AdamW((p for p in model.parameters() if p.requires_grad), lr=args.lr, weight_decay=1e-4)
         start = checkpoint['epoch'] + 1 if checkpoint else 1
         if start > args.epochs:
             raise ValueError('--epochs must exceed completed checkpoint epoch')
@@ -275,12 +282,13 @@ def main(argv=None, *, default_infer_source=None):
         metadata = {'args': saved_args, 'model_config': asdict(config), 'dataset_fingerprint': fingerprint,
                     'dataset_summary': summary, 'selected_train_windows': len(train), 'selected_val_windows': len(val),
                     'selection': 'highest weighted top-0.1%-pixel frame ROC AUC, tie lower gate loss',
-                    'loss': 'ST2 normal-window MSE + balanced gate BCE + positive Dice + background photometry',
+                    'loss': 'ST2 normal-window MSE + balanced gate BCE + positive Dice; frozen LoFTR/RANSAC',
                     'model_version': config.model_version,
                     'model_name': config.model_name, 'model_display_name': config.model_display_name,
                     'camera_augmentation': {'probability': args.camera_augmentation, 'training_only': True,
                                             'coherent_clip_and_masks': True},
-                    'motion_loss_weight': args.motion_loss_weight,
+                    'registration': {'backend': config.registration_backend, 'frozen': True,
+                                     'quality_fields': list(QUALITY_FIELDS)},
                     'supervision': 'target inside box union; outside is interference; ignore windows excluded',
                     'torch_version': str(torch.__version__)}
         write_json(run / 'config.json', metadata)
@@ -299,10 +307,10 @@ def main(argv=None, *, default_infer_source=None):
                 prior = torch.load(prior_best, map_location='cpu', weights_only=True)
                 # An inherited best may originate before this resume run. Compare
                 # training settings rather than output/resume paths or epoch limits.
-                training_defaults = {'camera_augmentation': 0., 'motion_loss_weight': 0.}
+                training_defaults = {'camera_augmentation': 0.}
                 training_names = ('history_frames', 'height', 'width', 'batch_size', 'embedding_dim', 'gate_floor',
                                   'lr', 'positive_fraction', 'seed', 'max_train_samples', 'max_val_samples',
-                                  'camera_augmentation', 'motion_loss_weight')
+                                  'camera_augmentation', 'registration_max_side')
                 same_training = all(prior.get('args', {}).get(name, training_defaults.get(name)) ==
                                     checkpoint['args'].get(name, training_defaults.get(name)) for name in training_names)
                 if (prior.get('format') == checkpoint['format']

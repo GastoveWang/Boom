@@ -1,8 +1,8 @@
-"""Learned global inter-frame motion and coherent clip augmentation.
+"""Coherent clip augmentation helpers (not a learned motion estimator).
 
 All matrices map current/output normalized coordinates to previous/input
 coordinates, as required by affine_grid/grid_sample with align_corners=False.
-The branch learns from background photometry, not from inference-time RANSAC.
+LoFTR + RANSAC registration lives in registration.py.
 """
 import torch
 from torch.nn import functional as F
@@ -22,27 +22,6 @@ def warp_images(images, theta, mode='bilinear'):
     return F.grid_sample(images, grid, mode=mode, padding_mode='zeros', align_corners=False), grid
 
 
-
-
-def background_photometric_loss(outputs, sequence_masks):
-    """Exclude target ROIs in BOTH frames of every adjacent pair, including overlaps."""
-    b, steps, _, h, w = outputs['motion_error'].shape
-    if sequence_masks is None or sequence_masks.shape != (b, steps + 1, 1, h, w):
-        raise ValueError('ST2 motion loss requires ROI masks for all historical and current frames')
-    if not torch.isfinite(sequence_masks).all() or ((sequence_masks != 0) & (sequence_masks != 1)).any():
-        raise ValueError('Sequence masks must be binary and finite')
-    source = sequence_masks[:, :-1].reshape(-1, 1, h, w)
-    theta = outputs['motion_theta'].detach().reshape(-1, 2, 3)
-    source_roi, _ = warp_images(source, theta, mode='nearest')
-    target_roi = sequence_masks[:, 1:].reshape(-1, 1, h, w)
-    # Exclude a small margin around target boundaries and bilinear mixing.
-    excluded = F.max_pool2d(torch.maximum(source_roi, target_roi), 3, stride=1, padding=1)
-    background = ((excluded < .01).reshape(b, steps, 1, h, w)
-                  & outputs['motion_valid']).to(outputs['motion_error'].dtype)
-    error = outputs['motion_error']
-    per_pair = (error * background).sum((-3, -2, -1)) / background.sum((-3, -2, -1)).clamp(min=1)
-    available = background.sum((-3, -2, -1)) > 0
-    return (per_pair * available).sum() / available.sum().clamp(min=1)
 
 
 def augment_camera_clip(history, current, mask, sequence_masks=None, probability=.5):
